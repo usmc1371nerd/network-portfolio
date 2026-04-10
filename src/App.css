@@ -36,6 +36,15 @@
   border-color: #00ffc3;
 }
 
+.secondary-button {
+  border: 1px solid rgba(0, 255, 195, 0.35);
+  background: rgba(11, 16, 32, 0.75);
+}
+
+.secondary-button:hover {
+  border-color: rgba(124, 58, 237, 0.8);
+}
+
 .main-layout {
   display: grid;
   grid-template-columns: 220px 1fr;
@@ -197,6 +206,56 @@
   border: 1px solid #7c3aed;
 }
 
+.lab-root--mobile {
+  grid-template-rows: 64px 1fr;
+}
+
+.mobile-lab-notice {
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.mobile-lab-card {
+  width: min(100%, 560px);
+  padding: 1.5rem;
+  border: 1px solid rgba(0, 255, 195, 0.3);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(11, 16, 32, 0.96));
+  box-shadow: 0 0 24px rgba(0, 255, 195, 0.08);
+}
+
+.mobile-lab-eyebrow {
+  margin: 0 0 0.65rem;
+  color: #00ffc3;
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.mobile-lab-card h2 {
+  margin: 0 0 0.9rem;
+  font-size: clamp(1.4rem, 5vw, 2rem);
+  line-height: 1.2;
+}
+
+.mobile-lab-card p {
+  margin: 0 0 0.85rem;
+  color: rgba(230, 237, 243, 0.82);
+  line-height: 1.6;
+}
+
+.mobile-lab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.mobile-lab-actions button {
+  flex: 1 1 220px;
+}
+
 @media (max-width: 980px) {
   .lab-root {
     grid-template-rows: 64px 1fr 360px;
@@ -213,5 +272,29 @@
   .panel + .panel {
     border-left: 0;
     border-top: 1px solid rgba(124, 58, 237, 0.4);
+  }
+}
+
+@media (max-width: 640px) {
+  .top-bar {
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+  }
+
+  .top-bar h1 {
+    font-size: 0.92rem;
+  }
+
+  .top-bar button {
+    width: 100%;
+  }
+
+  .mobile-lab-notice {
+    padding: 1rem;
+  }
+
+  .mobile-lab-card {
+    padding: 1.2rem;
+    border-radius: 14px;
   }
 }

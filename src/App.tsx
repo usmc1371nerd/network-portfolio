@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ReactFlowProvider,
@@ -70,6 +70,8 @@ function allocateNextDhcpIp(assignedIps: string[]): string | null {
 
 function App() {
   const navigate = useNavigate()
+  const [isMobileDevice, setIsMobileDevice] = useState(false)
+  const [allowMobileLab, setAllowMobileLab] = useState(false)
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [packetLogs, setPacketLogs] = useState<string[]>([])
@@ -230,6 +232,57 @@ function App() {
   const handleLaunchGuiMode = useCallback(() => {
     navigate('/gui')
   }, [navigate])
+
+  useEffect(() => {
+    const updateViewportMode = () => {
+      const coarsePointer = window.matchMedia('(pointer: coarse)').matches
+      const narrowViewport = window.innerWidth <= 900
+      setIsMobileDevice(coarsePointer || narrowViewport)
+    }
+
+    updateViewportMode()
+    window.addEventListener('resize', updateViewportMode)
+    window.addEventListener('orientationchange', updateViewportMode)
+
+    return () => {
+      window.removeEventListener('resize', updateViewportMode)
+      window.removeEventListener('orientationchange', updateViewportMode)
+    }
+  }, [])
+
+  if (isMobileDevice && !allowMobileLab) {
+    return (
+      <div className="lab-root lab-root--mobile">
+        <TopBar onLaunchGuiMode={handleLaunchGuiMode} />
+        <main className="mobile-lab-notice">
+          <div className="mobile-lab-card">
+            <p className="mobile-lab-eyebrow">Mobile device detected</p>
+            <h2>JP&apos;s terminal lab works best on a computer.</h2>
+            <p>
+              The interactive network canvas and terminal are optimized for desktop screens.
+              On phones, the layout can feel cramped and unreliable even in landscape mode.
+            </p>
+            <p>
+              For the best experience, open this page on a laptop or desktop. You can still use
+              the GUI portfolio right now.
+            </p>
+            <div className="mobile-lab-actions">
+              <button type="button" onClick={handleLaunchGuiMode}>
+                Open GUI Portfolio
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setAllowMobileLab(true)}
+              >
+                Try Terminal Anyway
+              </button>
+            </div>
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <ReactFlowProvider>
