@@ -1,6 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import helmet from 'helmet'
 import { authRouter } from './routes/auth.js'
 import { postsRouter } from './routes/posts.js'
 
@@ -9,6 +10,14 @@ dotenv.config()
 const app = express()
 const port = Number(process.env.PORT ?? 4000)
 const origins = (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173').split(',')
+
+app.set('trust proxy', 1)
+
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  }),
+)
 
 app.use(
   cors({
