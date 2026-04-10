@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom'
 export function Navbar() {
   return (
     <header className="gui-navbar">
-      <h1>JP Portfolio</h1>
+      <h1>JP Portfolio TEST2</h1>
       <nav>
         <NavLink to="/">Terminal</NavLink>
         <NavLink to="/gui">Home</NavLink>
