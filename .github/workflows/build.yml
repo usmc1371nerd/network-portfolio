@@ -2,13 +2,51 @@ name: Build & Release
 
 on:
   push:
+    branches:
+      - master
     tags:
       - 'v*'
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Test Build (All Commits)
+    if: github.event.ref == 'refs/heads/master' && !startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Check TypeScript
+        run: npx tsc -b
+      
+      - name: Build production bundle
+        run: npm run build
+      
+      - name: Run Linter
+        run: npm run lint -- --max-warnings 5
+        continue-on-error: true
+      
+      - name: Archive build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist-test-${{ github.sha }}
+          path: dist/
+          retention-days: 5
+
   build:
     runs-on: ubuntu-latest
     name: Build Production Bundle
+    if: startsWith(github.ref, 'refs/tags/v')
     
     steps:
       - name: Checkout code
@@ -58,9 +96,10 @@ jobs:
     permissions:
       contents: write
 
-  lint:
+  lint-on-release:
     runs-on: ubuntu-latest
-    name: Lint & Format Check
+    name: Lint on Release
+    if: startsWith(github.ref, 'refs/tags/v')
     
     steps:
       - name: Checkout code
