@@ -267,7 +267,7 @@ function App() {
               the GUI portfolio right now.
             </p>
             <div className="mobile-lab-actions">
-              <button type="button" onClick={handleLaunchGuiMode}>
+              <button type="button" className="primary-dark-button" onClick={handleLaunchGuiMode}>
                 Open GUI Portfolio
               </button>
               <button

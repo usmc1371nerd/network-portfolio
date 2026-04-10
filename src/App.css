@@ -41,6 +41,16 @@
   background: rgba(11, 16, 32, 0.75);
 }
 
+.primary-dark-button {
+  border: 1px solid rgba(0, 255, 195, 0.35);
+  background: rgba(6, 10, 20, 0.96);
+}
+
+.primary-dark-button:hover {
+  border-color: #00ffc3;
+  background: rgba(8, 14, 28, 0.98);
+}
+
 .secondary-button:hover {
   border-color: rgba(124, 58, 237, 0.8);
 }
