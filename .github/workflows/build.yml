@@ -5,119 +5,111 @@ on:
     branches:
       - master
     tags:
-      - 'v*'
+      - v*
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  test:
+  ci:
     runs-on: ubuntu-latest
-    name: Test Build (All Commits)
-    if: github.event.ref == 'refs/heads/master' && !startsWith(github.ref, 'refs/tags/')
-    
+    name: CI (Push/PR)
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-      
+          node-version: 20.19.0
+          cache: npm
+
       - name: Install dependencies
-        run: npm install
-      
+        run: npm ci
+
       - name: Check TypeScript
         run: npx tsc -b
-      
+
       - name: Build production bundle
         run: npm run build
-      
+
       - name: Run Linter
         run: npm run lint -- --max-warnings 5
         continue-on-error: true
-      
+
       - name: Archive build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist-test-${{ github.sha }}
+          name: dist-ci-${{ github.sha }}
           path: dist/
           retention-days: 5
 
-  build:
+  release:
     runs-on: ubuntu-latest
-    name: Build Production Bundle
-    if: startsWith(github.ref, 'refs/tags/v')
-    
+    name: Release Build (Tags)
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-      
+          node-version: 20.19.0
+          cache: npm
+
       - name: Install dependencies
-        run: npm install
-      
+        run: npm ci
+
       - name: Check TypeScript
         run: npx tsc -b
-      
+
       - name: Build production bundle
         run: npm run build
-      
-      - name: Create Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref_name }}
-          body: |
-            Production build ready for deployment.
-            
-            **To Deploy:**
-            1. Download dist folder
-            2. Upload contents to Hostinger public_html
-            3. Keep .htaccess in place for SPA routing
-            
-            See [DEPLOYMENT_GUIDE.md](https://github.com/usmc1371nerd/network-portfolio/blob/main/DEPLOYMENT_GUIDE.md) for details.
-          draft: false
-          prerelease: false
-      
-      - name: Upload Artifacts
+
+      - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
           name: dist-${{ github.ref_name }}
           path: dist/
           retention-days: 30
-    
-    permissions:
-      contents: write
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          generate_release_notes: true
 
   deploy:
     runs-on: ubuntu-latest
     name: Deploy to Hostinger
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
-    
+    needs: release
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-      
+          node-version: 20.19.0
+          cache: npm
+
       - name: Install dependencies
-        run: npm install
-      
+        run: npm ci
+
       - name: Build production bundle
         run: npm run build
-      
+
       - name: Deploy to Hostinger via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
@@ -126,33 +118,5 @@ jobs:
           password: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
           local-dir: ./dist/
           server-dir: /public_html/
-          state-name: '.ftp-deploy-sync-state.json'
+          state-name: .ftp-deploy-sync-state.json
           dangerous-clean-slate: false
-      
-      - name: Deployment Success
-        run: |
-          echo "✅ Deployment complete!"
-          echo "Version: ${{ github.ref_name }}"
-          echo "Frontend deployed to: https://your-domain.com"
-
-  lint-on-release:
-    runs-on: ubuntu-latest
-    name: Lint on Release
-    if: startsWith(github.ref, 'refs/tags/v')
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      
-      - name: Install dependencies
-        run: npm install
-      
-      - name: Run ESLint
-        run: npm run lint -- --max-warnings 5
-        continue-on-error: true
