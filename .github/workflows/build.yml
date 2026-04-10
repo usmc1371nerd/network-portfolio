@@ -96,6 +96,45 @@ jobs:
     permissions:
       contents: write
 
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy to Hostinger
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Build production bundle
+        run: npm run build
+      
+      - name: Deploy to Hostinger via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.HOSTINGER_FTP_SERVER }}
+          username: ${{ secrets.HOSTINGER_FTP_USER }}
+          password: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
+          local-dir: ./dist/
+          server-dir: /public_html/
+          state-name: '.ftp-deploy-sync-state.json'
+          dangerous-clean-slate: false
+      
+      - name: Deployment Success
+        run: |
+          echo "✅ Deployment complete!"
+          echo "Version: ${{ github.ref_name }}"
+          echo "Frontend deployed to: https://your-domain.com"
+
   lint-on-release:
     runs-on: ubuntu-latest
     name: Lint on Release
