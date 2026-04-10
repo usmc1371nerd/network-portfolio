@@ -1,0 +1,80 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Build Production Bundle
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Check TypeScript
+        run: npx tsc -b
+      
+      - name: Build production bundle
+        run: npm run build
+      
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref_name }}
+          body: |
+            Production build ready for deployment.
+            
+            **To Deploy:**
+            1. Download dist folder
+            2. Upload contents to Hostinger public_html
+            3. Keep .htaccess in place for SPA routing
+            
+            See [DEPLOYMENT_GUIDE.md](https://github.com/usmc1371nerd/network-portfolio/blob/main/DEPLOYMENT_GUIDE.md) for details.
+          draft: false
+          prerelease: false
+      
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist-${{ github.ref_name }}
+          path: dist/
+          retention-days: 30
+    
+    permissions:
+      contents: write
+
+  lint:
+    runs-on: ubuntu-latest
+    name: Lint & Format Check
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Run ESLint
+        run: npm run lint -- --max-warnings 5
+        continue-on-error: true
