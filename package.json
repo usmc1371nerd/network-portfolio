@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "postinstall": "npm --prefix server install",
-    "start": "node server/index.js",
+    "start": "node index.js",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
