@@ -111,6 +111,7 @@ jobs:
         run: npm run build
 
       - name: Deploy frontend to Hostinger via SCP
+        continue-on-error: true
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.HOSTINGER_SSH_HOST }}
