@@ -22,15 +22,12 @@ $package.version = $newVersion
 $json = $package | ConvertTo-Json -Depth 32
 [System.IO.File]::WriteAllText($packagePath, $json)
 
-Write-Host "✓ Version bumped from $($version) to $newVersion" -ForegroundColor Green
+Write-Host "Version bumped from $($version) to $newVersion" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host "  1. Review changes: git status"
 Write-Host "  2. Stage version update: git add package.json"
-Write-Host "  3. Commit: git commit -m 'chore: v$newVersion - [describe changes]'"
+Write-Host "  3. Commit: git commit -m 'chore: v$newVersion'"
 Write-Host "  4. Create tag: git tag v$newVersion"
 Write-Host "  5. Build: npm run build"
-Write-Host "  6. Push: git push origin main --tags"
-Write-Host ""
-Write-Host "Example commit message:" -ForegroundColor Yellow
-Write-Host "  git commit -m 'chore: v$newVersion - Add new features'"
+Write-Host "  6. Push: git push origin master --tags"

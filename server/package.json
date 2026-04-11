@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node --watch index.js",
     "start": "node index.js",
+    "db:check": "node scripts/checkDb.js",
     "create-admin": "node scripts/createAdmin.js",
     "generate-admin-sql": "node scripts/generateAdminSql.js"
   },

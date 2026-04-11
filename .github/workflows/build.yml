@@ -133,5 +133,6 @@ jobs:
             cd ~/domains/api.jpsportfolio.com/nodejs
             git pull origin master
             npm install --omit=dev
+            node server/scripts/checkDb.js
             mkdir -p tmp
             touch tmp/restart.txt

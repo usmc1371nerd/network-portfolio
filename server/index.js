@@ -1,16 +1,28 @@
 import express from 'express'
 import cors from 'cors'
-import dotenv from 'dotenv'
 import helmet from 'helmet'
 import { authRouter } from './routes/auth.js'
 import { postsRouter } from './routes/posts.js'
 import { db } from './db/connection.js'
+import { loadEnv } from './config/loadEnv.js'
 
-dotenv.config()
+loadEnv()
 
 const app = express()
 const port = Number(process.env.PORT ?? 4000)
-const origins = (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173').split(',')
+const origins = (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim().replace(/\/$/, ''))
+  .filter(Boolean)
+
+function isAllowedOrigin(origin) {
+  if (!origin) {
+    return true
+  }
+
+  const normalizedOrigin = origin.replace(/\/$/, '')
+  return origins.includes(normalizedOrigin)
+}
 
 app.set('trust proxy', 1)
 
@@ -22,14 +34,26 @@ app.use(
 
 app.use(
   cors({
-    origin: origins,
+    origin(origin, callback) {
+      if (isAllowedOrigin(origin)) {
+        return callback(null, true)
+      }
+
+      return callback(new Error('CORS blocked for origin'))
+    },
     credentials: false,
   }),
 )
 app.use(express.json({ limit: '1mb' }))
 
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true })
+app.get('/api/health', async (_req, res) => {
+  try {
+    await db.execute('SELECT 1 AS ok')
+    return res.json({ ok: true, db: true })
+  } catch (error) {
+    console.error('Health check DB failure:', error)
+    return res.status(503).json({ ok: false, db: false, error: 'Database unavailable' })
+  }
 })
 
 app.get('/api/debug/db-config', async (req, res) => {

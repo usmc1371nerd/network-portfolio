@@ -27,6 +27,10 @@ function getDefaultApiBase(): string {
   }
 
   const hostname = window.location.hostname.replace(/^www\./, '')
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:4000/api'
+  }
+
   return `https://api.${hostname}/api`
 }
 
