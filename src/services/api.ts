@@ -15,7 +15,16 @@ type LoginResponse = {
   token: string
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api'
+function getDefaultApiBase(): string {
+  if (import.meta.env.DEV) {
+    return 'http://localhost:4000/api'
+  }
+
+  const hostname = window.location.hostname.replace(/^www\./, '')
+  return `https://api.${hostname}/api`
+}
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? getDefaultApiBase()
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
