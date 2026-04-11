@@ -40,27 +40,27 @@ app.get('/api/debug/db-config', async (req, res) => {
     return res.status(403).json({ error: 'Forbidden' })
   }
 
+  let connectionOk = false
+  let connectionError = null
   try {
     const [rows] = await db.execute('SELECT 1 AS ok')
-
-    return res.json({
-      dbHost: process.env.DB_HOST ?? null,
-      dbPort: process.env.DB_PORT ?? null,
-      dbUser: process.env.DB_USER ?? null,
-      dbName: process.env.DB_NAME ?? null,
-      hasPassword: Boolean(process.env.DB_PASSWORD),
-      connectionOk: rows[0]?.ok === 1,
-    })
+    connectionOk = rows[0]?.ok === 1
   } catch (error) {
-    return res.status(500).json({
-      dbHost: process.env.DB_HOST ?? null,
-      dbPort: process.env.DB_PORT ?? null,
-      dbUser: process.env.DB_USER ?? null,
-      dbName: process.env.DB_NAME ?? null,
-      hasPassword: Boolean(process.env.DB_PASSWORD),
-      error: error instanceof Error ? error.message : 'Unknown database error',
-    })
+    connectionError = error instanceof Error ? error.message : 'Unknown database error'
   }
+
+  // Always return 200 so Hostinger's proxy does not strip the response body
+  return res.json({
+    dbHost: process.env.DB_HOST ?? null,
+    dbPort: process.env.DB_PORT ?? null,
+    dbUser: process.env.DB_USER ?? null,
+    dbName: process.env.DB_NAME ?? null,
+    hasPassword: Boolean(process.env.DB_PASSWORD),
+    setupEnabled: process.env.SETUP_ENABLED ?? null,
+    hasSetupSecret: Boolean(process.env.SETUP_SECRET),
+    connectionOk,
+    connectionError,
+  })
 })
 
 app.use('/api', authRouter)

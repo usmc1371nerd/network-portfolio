@@ -110,16 +110,17 @@ jobs:
       - name: Build production bundle
         run: npm run build
 
-      - name: Deploy frontend to Hostinger via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      - name: Deploy frontend to Hostinger via SCP
+        uses: appleboy/scp-action@v0.1.7
         with:
-          server: ${{ secrets.HOSTINGER_FTP_SERVER }}
-          username: ${{ secrets.HOSTINGER_FTP_USER }}
-          password: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
-          local-dir: ./dist/
-          server-dir: /public_html/
-          state-name: .ftp-deploy-sync-state.json
-          dangerous-clean-slate: false
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER }}
+          password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+          port: 65002
+          source: "dist/*"
+          target: "~/public_html"
+          strip_components: 1
+          rm: true
 
       - name: Deploy server to Hostinger via SSH
         uses: appleboy/ssh-action@v1.0.3
