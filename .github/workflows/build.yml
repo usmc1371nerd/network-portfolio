@@ -129,7 +129,7 @@ jobs:
           password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
           port: 65002
           script: |
-            cd ~/network-portfolio-api
+            cd ~/domains/api.jpsportfolio.com/nodejs
             git pull origin master
             npm install --omit=dev
             mkdir -p tmp
