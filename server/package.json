@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node --watch index.js",
     "start": "node index.js",
-    "create-admin": "node scripts/createAdmin.js"
+    "create-admin": "node scripts/createAdmin.js",
+    "generate-admin-sql": "node scripts/generateAdminSql.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
