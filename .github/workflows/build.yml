@@ -127,6 +127,7 @@ jobs:
           host: ${{ secrets.HOSTINGER_SSH_HOST }}
           username: ${{ secrets.HOSTINGER_SSH_USER }}
           password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+          port: 65002
           script: |
             cd ~/network-portfolio-api
             git pull origin master
