@@ -13,6 +13,8 @@ import { Projects } from './pages/Projects'
 import { Dashboard } from './admin/Dashboard'
 import { Editor } from './admin/Editor'
 import { Login } from './admin/Login'
+import { Setup } from './admin/Setup'
+import { Account } from './admin/Account'
 
 function hasAdminToken(): boolean {
   return Boolean(localStorage.getItem('jp_admin_token'))
@@ -48,6 +50,7 @@ function AdminLayout({ children }: { children: ReactNode }) {
         <nav>
           <NavLink to="/admin/dashboard">Dashboard</NavLink>
           <NavLink to="/admin/editor">New Post</NavLink>
+          <NavLink to="/admin/account">Account</NavLink>
         </nav>
         <button
           type="button"
@@ -80,6 +83,7 @@ export function AppRouter() {
       </Route>
 
       <Route path="/admin" element={<Login />} />
+      <Route path="/admin/setup" element={<Setup />} />
       <Route
         path="/admin/dashboard"
         element={
@@ -96,6 +100,16 @@ export function AppRouter() {
           <ProtectedRoute>
             <AdminLayout>
               <Editor />
+            </AdminLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/account"
+        element={
+          <ProtectedRoute>
+            <AdminLayout>
+              <Account />
             </AdminLayout>
           </ProtectedRoute>
         }

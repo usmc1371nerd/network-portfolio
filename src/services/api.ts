@@ -15,6 +15,11 @@ type LoginResponse = {
   token: string
 }
 
+export type SetupStatus = {
+  adminExists: boolean
+  setupEnabled: boolean
+}
+
 function getDefaultApiBase(): string {
   if (import.meta.env.DEV) {
     return 'http://localhost:4000/api'
@@ -47,6 +52,33 @@ export async function login(email: string, password: string): Promise<LoginRespo
   return request<LoginResponse>('/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
+  })
+}
+
+export async function getSetupStatus(): Promise<SetupStatus> {
+  return request<SetupStatus>('/setup/status')
+}
+
+export async function bootstrapAdmin(
+  email: string,
+  password: string,
+  setupSecret: string,
+): Promise<LoginResponse> {
+  return request<LoginResponse>('/setup/bootstrap-admin', {
+    method: 'POST',
+    body: JSON.stringify({ email, password, setupSecret }),
+  })
+}
+
+export async function changePassword(
+  token: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>('/account/change-password', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ currentPassword, newPassword }),
   })
 }
 
