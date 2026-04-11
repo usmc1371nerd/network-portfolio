@@ -26,6 +26,7 @@ const postPayloadValidators = [
   body('excerpt').isString().trim().isLength({ min: 1, max: 1000 }),
   body('content').isString().isLength({ min: 1, max: 500000 }),
   body('status').isIn(['draft', 'published']),
+  body('published_at').optional().isISO8601().toDate(),
 ]
 
 postsRouter.get('/posts', query('scope').optional().isIn(['published', 'all']), listPostsController)

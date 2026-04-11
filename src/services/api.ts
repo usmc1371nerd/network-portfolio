@@ -9,6 +9,7 @@ export type BlogPost = {
   status: PostStatus
   created_at: string
   updated_at: string
+  published_at: string | null
 }
 
 type LoginResponse = {

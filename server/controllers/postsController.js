@@ -12,6 +12,7 @@ function formatPostRow(row) {
     status: row.status,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    published_at: row.published_at,
   }
 }
 
@@ -30,19 +31,19 @@ export async function listPostsController(req, res) {
     }
 
     const [rows] = await db.execute(
-      `SELECT id, title, slug, excerpt, content, status, created_at, updated_at
+      `SELECT id, title, slug, excerpt, content, status, created_at, updated_at, published_at
        FROM posts
-       ORDER BY created_at DESC`,
+       ORDER BY COALESCE(published_at, created_at) DESC`,
     )
 
     return res.json(rows.map(formatPostRow))
   }
 
   const [rows] = await db.execute(
-    `SELECT id, title, slug, excerpt, content, status, created_at, updated_at
+    `SELECT id, title, slug, excerpt, content, status, created_at, updated_at, published_at
      FROM posts
      WHERE status = 'published'
-     ORDER BY created_at DESC`,
+     ORDER BY COALESCE(published_at, created_at) DESC`,
   )
 
   return res.json(rows.map(formatPostRow))
@@ -57,7 +58,7 @@ export async function getPostBySlugController(req, res) {
   const { slug } = req.params
 
   const [rows] = await db.execute(
-    `SELECT id, title, slug, excerpt, content, status, created_at, updated_at
+    `SELECT id, title, slug, excerpt, content, status, created_at, updated_at, published_at
      FROM posts
      WHERE slug = ? AND status = 'published'
      LIMIT 1`,
@@ -77,16 +78,16 @@ export async function createPostController(req, res) {
     return res.status(400).json({ error: 'Invalid post payload', details: errors.array() })
   }
 
-  const { title, slug, content, excerpt, status } = req.body
+  const { title, slug, content, excerpt, status, published_at } = req.body
 
   const [result] = await db.execute(
-    `INSERT INTO posts (title, slug, content, excerpt, status)
-     VALUES (?, ?, ?, ?, ?)`,
-    [title, slug, content, excerpt, status],
+    `INSERT INTO posts (title, slug, content, excerpt, status, published_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [title, slug, content, excerpt, status, published_at || null],
   )
 
   const [rows] = await db.execute(
-    `SELECT id, title, slug, excerpt, content, status, created_at, updated_at
+    `SELECT id, title, slug, excerpt, content, status, created_at, updated_at, published_at
      FROM posts
      WHERE id = ?
      LIMIT 1`,
@@ -103,13 +104,13 @@ export async function updatePostController(req, res) {
   }
 
   const postId = Number(req.params.id)
-  const { title, slug, content, excerpt, status } = req.body
+  const { title, slug, content, excerpt, status, published_at } = req.body
 
   const [updateResult] = await db.execute(
     `UPDATE posts
-     SET title = ?, slug = ?, content = ?, excerpt = ?, status = ?
+     SET title = ?, slug = ?, content = ?, excerpt = ?, status = ?, published_at = ?
      WHERE id = ?`,
-    [title, slug, content, excerpt, status, postId],
+    [title, slug, content, excerpt, status, published_at || null, postId],
   )
 
   if (updateResult.affectedRows === 0) {
@@ -117,7 +118,7 @@ export async function updatePostController(req, res) {
   }
 
   const [rows] = await db.execute(
-    `SELECT id, title, slug, excerpt, content, status, created_at, updated_at
+    `SELECT id, title, slug, excerpt, content, status, created_at, updated_at, published_at
      FROM posts
      WHERE id = ?
      LIMIT 1`,

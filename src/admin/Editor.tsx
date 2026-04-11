@@ -8,6 +8,7 @@ type EditorForm = {
   excerpt: string
   content: string
   status: PostStatus
+  published_at: string | null
 }
 
 const initialForm: EditorForm = {
@@ -16,6 +17,7 @@ const initialForm: EditorForm = {
   excerpt: '',
   content: '',
   status: 'draft',
+  published_at: null,
 }
 
 export function Editor() {
@@ -49,6 +51,7 @@ export function Editor() {
           excerpt: existing.excerpt,
           content: existing.content,
           status: existing.status,
+          published_at: existing.published_at ? existing.published_at.slice(0, 16) : null,
         })
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : 'Unable to load post')
@@ -129,6 +132,14 @@ export function Editor() {
             <option value="draft">draft</option>
             <option value="published">published</option>
           </select>
+        </label>
+        <label>
+          Published Date (leave empty for today)
+          <input
+            type="datetime-local"
+            value={form.published_at || ''}
+            onChange={(event) => setForm((prev) => ({ ...prev, published_at: event.target.value || null }))}
+          />
         </label>
 
         {error ? <p className="error-text">{error}</p> : null}

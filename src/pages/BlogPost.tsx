@@ -41,7 +41,7 @@ export function BlogPost() {
   return (
     <article>
       <h2>{post.title}</h2>
-      <p className="meta">Published: {new Date(post.created_at).toLocaleDateString()}</p>
+      <p className="meta">Published: {new Date(post.published_at || post.created_at).toLocaleDateString()}</p>
       <MarkdownRenderer markdown={post.content} />
     </article>
   )

@@ -40,7 +40,7 @@ export function BlogList() {
             title={post.title}
             excerpt={post.excerpt}
             slug={post.slug}
-            publishDate={post.created_at}
+            publishDate={post.published_at || post.created_at}
           />
         ))}
       </div>

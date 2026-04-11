@@ -6,6 +6,7 @@ export function Dashboard() {
   const [posts, setPosts] = useState<BlogPost[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
 
   const token = localStorage.getItem('jp_admin_token') ?? ''
 
@@ -31,9 +32,16 @@ export function Dashboard() {
     try {
       await deletePost(token, id)
       await loadPosts()
+      setDeletingId(null)
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : 'Delete failed')
     }
+  }
+
+  const formatDate = (dateString: string | null | undefined): string => {
+    if (!dateString) return 'No date set'
+    const date = new Date(dateString)
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
   }
 
   return (
@@ -50,11 +58,23 @@ export function Dashboard() {
             <h3>{post.title}</h3>
             <p>{post.excerpt}</p>
             <p className="meta">Status: {post.status}</p>
+            <p className="meta">Published: {formatDate(post.published_at || post.created_at)}</p>
             <div className="link-row">
               <Link to={`/admin/edit/${post.id}`}>Edit</Link>
-              <button type="button" onClick={() => void handleDelete(post.id)}>
-                Delete
-              </button>
+              {deletingId === post.id ? (
+                <>
+                  <button type="button" onClick={() => void handleDelete(post.id)}>
+                    Confirm Delete
+                  </button>
+                  <button type="button" onClick={() => setDeletingId(null)}>
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button type="button" onClick={() => setDeletingId(post.id)}>
+                  Delete
+                </button>
+              )}
             </div>
           </article>
         ))}

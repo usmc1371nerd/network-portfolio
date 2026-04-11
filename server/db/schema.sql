@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS posts (
   excerpt TEXT,
   status VARCHAR(20),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  published_at TIMESTAMP NULL
 );
 
 -- Create your admin user using a bcrypt hash generated in Node.js.
