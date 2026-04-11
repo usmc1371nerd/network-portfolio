@@ -132,21 +132,26 @@ jobs:
           port: 65002
           script: |
             cd ~/domains/api.jpsportfolio.com/nodejs
-            
-            # Create .env file from GitHub Secrets
-            cat > server/.env << 'EOF'
-            PORT=4000
-            CLIENT_ORIGIN=https://jpsportfolio.com,https://www.jpsportfolio.com
-            DB_HOST=${{ secrets.DB_HOST }}
-            DB_PORT=${{ secrets.DB_PORT }}
-            DB_USER=${{ secrets.DB_USER }}
-            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-            DB_NAME=${{ secrets.DB_NAME }}
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
-            JWT_EXPIRES_IN=8h
-            SETUP_ENABLED=false
-            SETUP_SECRET=${{ secrets.SETUP_SECRET }}
-            EOF
+
+            # Create .env file only when required secrets are provided
+            if [ -n "${{ secrets.DB_HOST }}" ] && [ -n "${{ secrets.DB_USER }}" ] && [ -n "${{ secrets.DB_PASSWORD }}" ] && [ -n "${{ secrets.DB_NAME }}" ] && [ -n "${{ secrets.JWT_SECRET }}" ] && [ -n "${{ secrets.SETUP_SECRET }}" ]; then
+              cat > server/.env << 'EOF'
+              PORT=4000
+              CLIENT_ORIGIN=https://jpsportfolio.com,https://www.jpsportfolio.com
+              DB_HOST=${{ secrets.DB_HOST }}
+              DB_PORT=${{ secrets.DB_PORT }}
+              DB_USER=${{ secrets.DB_USER }}
+              DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+              DB_NAME=${{ secrets.DB_NAME }}
+              JWT_SECRET=${{ secrets.JWT_SECRET }}
+              JWT_EXPIRES_IN=8h
+              SETUP_ENABLED=false
+              SETUP_SECRET=${{ secrets.SETUP_SECRET }}
+              EOF
+              echo "server/.env written from GitHub Secrets"
+            else
+              echo "DB/JWT secrets not fully configured in GitHub; keeping existing runtime environment"
+            fi
             
             git pull origin master
             npm install --omit=dev
