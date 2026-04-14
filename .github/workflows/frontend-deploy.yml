@@ -32,7 +32,14 @@ jobs:
           test -n "${{ secrets.HOSTINGER_FTP_SERVER }}" || (echo "Missing HOSTINGER_FTP_SERVER" && exit 1)
           test -n "${{ secrets.HOSTINGER_FTP_USER }}" || (echo "Missing HOSTINGER_FTP_USER" && exit 1)
           test -n "${{ secrets.HOSTINGER_FTP_PASSWORD }}" || (echo "Missing HOSTINGER_FTP_PASSWORD" && exit 1)
-          test -n "${{ secrets.VITE_API_BASE_URL }}" || (echo "Missing VITE_API_BASE_URL" && exit 1)
+
+      - name: Report API base configuration
+        run: |
+          if [ -n "${{ secrets.VITE_API_BASE_URL }}" ]; then
+            echo "Using VITE_API_BASE_URL from GitHub Secrets"
+          else
+            echo "VITE_API_BASE_URL not set; using frontend default API base resolution"
+          fi
 
       - name: Install dependencies
         run: npm ci
