@@ -130,6 +130,7 @@ function App() {
   })
   const [nodeCount, setNodeCount] = useState(1)
   const [assignedPcIps, setAssignedPcIps] = useState<string[]>([])
+  const [helpEnabled, setHelpEnabled] = useState(true)
   const [packetAnimation, setPacketAnimation] = useState<{
     fromNodeId: string
     toNodeId: string
@@ -244,7 +245,7 @@ function App() {
         data: {
           ...node.data,
           isConnected: connectedNodeIds.has(node.id),
-          showGuideHint: node.id === 'pc-1' && terminalContext.onboardingStep === 'type-help',
+          showGuideHint: helpEnabled && node.id === 'pc-1' && terminalContext.onboardingStep === 'type-help',
         },
       })),
     [connectedNodeIds, nodes, terminalContext.onboardingStep],
@@ -357,14 +358,14 @@ function App() {
         'connect:',
         `ssh guest@${assignedIp}`,
       ])
-      if (nextLabel === 'PC-1') {
+      if (nextLabel === 'PC-1' && helpEnabled) {
         setTerminalContext((currentContext) => ({
           ...currentContext,
           onboardingStep: 'type-help',
         }))
       }
     },
-    [assignedPcIps, nodeCount, setNodes],
+    [assignedPcIps, helpEnabled, nodeCount, setNodes],
   )
 
   const handleTerminalSubmit = useCallback(() => {
@@ -385,6 +386,7 @@ function App() {
       pcNodes,
       serverIp: serverNodeData.ip,
       serverLabel: serverNodeData.label,
+      helpEnabled,
     })
 
     setTerminalContext(result.context)
@@ -409,6 +411,7 @@ function App() {
     setTerminalInput('')
   }, [
     hasServerConnection,
+    helpEnabled,
     ipToNodeId,
     knownNodeIps,
     pcNodes,
@@ -639,6 +642,10 @@ function App() {
     navigate('/gui')
   }, [navigate])
 
+  const handleToggleHelp = useCallback(() => {
+    setHelpEnabled((current) => !current)
+  }, [])
+
   useEffect(() => {
     const updateViewportMode = () => {
       const coarsePointer = window.matchMedia('(pointer: coarse)').matches
@@ -668,7 +675,7 @@ function App() {
   if (isMobileDevice && !allowMobileLab) {
     return (
       <div className="lab-root lab-root--mobile">
-        <TopBar onLaunchGuiMode={handleLaunchGuiMode} />
+        <TopBar onLaunchGuiMode={handleLaunchGuiMode} helpEnabled={helpEnabled} onToggleHelp={handleToggleHelp} />
         <main className="mobile-lab-notice">
           <div className="mobile-lab-card">
             <p className="mobile-lab-eyebrow">Mobile device detected</p>
@@ -702,7 +709,7 @@ function App() {
   return (
     <ReactFlowProvider>
       <div className="lab-root">
-        <TopBar onLaunchGuiMode={handleLaunchGuiMode} />
+        <TopBar onLaunchGuiMode={handleLaunchGuiMode} helpEnabled={helpEnabled} onToggleHelp={handleToggleHelp} />
         <div className="main-layout">
           <DevicePanel />
           <NetworkCanvas

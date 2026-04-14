@@ -25,6 +25,7 @@ type TerminalRuntime = {
   pcNodes: Map<string, string> // ip → label
   serverIp: string
   serverLabel: string
+  helpEnabled: boolean
 }
 
 export const initialTerminalLines = [
@@ -110,7 +111,7 @@ export function processTerminalCommand(
   }
 
   if (command === 'help') {
-    if (context.onboardingStep === 'type-help' || context.onboardingStep === 'ssh-pc-1') {
+    if (runtime.helpEnabled && (context.onboardingStep === 'type-help' || context.onboardingStep === 'ssh-pc-1')) {
       const needsConnectionGuide = !runtime.serverReachable
 
       return {

@@ -32,6 +32,42 @@
   font: inherit;
 }
 
+.top-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.help-toggle-button {
+  font-size: 0.78rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.help-toggle-on {
+  border: 1px solid rgba(0, 255, 195, 0.7);
+  background: rgba(0, 255, 195, 0.12);
+  color: #00ffc3;
+}
+
+.help-toggle-on:hover {
+  background: rgba(0, 255, 195, 0.22);
+}
+
+.help-toggle-off {
+  border: 1px solid rgba(230, 237, 243, 0.2);
+  background: rgba(230, 237, 243, 0.05);
+  color: rgba(230, 237, 243, 0.4);
+}
+
+.help-toggle-off:hover {
+  border-color: rgba(230, 237, 243, 0.4);
+  color: rgba(230, 237, 243, 0.7);
+}
+
 .top-bar button:hover {
   border-color: #00ffc3;
 }
