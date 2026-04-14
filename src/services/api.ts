@@ -21,23 +21,52 @@ export type SetupStatus = {
   setupEnabled: boolean
 }
 
-function getDefaultApiBase(): string {
+function normalizeApiBase(apiBase: string): string {
+  const trimmed = apiBase.trim().replace(/\/+$/, '')
+  if (!trimmed) {
+    return ''
+  }
+
+  return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`
+}
+
+function getDefaultApiBases(): string[] {
   if (import.meta.env.DEV) {
-    return 'http://localhost:4000/api'
+    return ['http://localhost:4000/api']
   }
 
   const hostname = window.location.hostname.replace(/^www\./, '')
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'http://localhost:4000/api'
+    return ['http://localhost:4000/api']
   }
 
-  return `https://api.${hostname}/api`
+  const derivedSubdomainBase = `https://api.${hostname}/api`
+  const sameOriginBase = `${window.location.origin.replace(/\/+$/, '')}/api`
+
+  return [derivedSubdomainBase, sameOriginBase]
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? getDefaultApiBase()
+const configuredPrimaryBase = normalizeApiBase(import.meta.env.VITE_API_BASE_URL ?? '')
+const configuredFallbackBases = (import.meta.env.VITE_API_BASE_FALLBACKS ?? '')
+  .split(',')
+  .map((base: string) => normalizeApiBase(base))
+  .filter(Boolean)
+const defaultBases = getDefaultApiBases()
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+const API_BASES = [
+  configuredPrimaryBase,
+  ...configuredFallbackBases,
+  ...defaultBases,
+]
+  .filter(Boolean)
+  .filter((base, index, bases) => bases.indexOf(base) === index)
+
+let activeApiBase = API_BASES[0]
+
+type RequestError = Error & { status?: number }
+
+async function requestFromBase<T>(apiBase: string, path: string, options: RequestInit): Promise<T> {
+  const response = await fetch(`${apiBase}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -47,10 +76,47 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!response.ok) {
     const errorBody = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(errorBody?.error ?? 'Request failed')
+    const error = new Error(errorBody?.error ?? `Request failed (${response.status})`) as RequestError
+    error.status = response.status
+    throw error
   }
 
   return (await response.json()) as T
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const method = (options.method ?? 'GET').toUpperCase()
+  const canTryFallbackBases = method === 'GET' || method === 'HEAD'
+  const candidateBases = canTryFallbackBases
+    ? [activeApiBase, ...API_BASES.filter((base) => base !== activeApiBase)]
+    : [activeApiBase]
+
+  let latestError: unknown = null
+
+  for (let index = 0; index < candidateBases.length; index += 1) {
+    const apiBase = candidateBases[index]
+
+    try {
+      const payload = await requestFromBase<T>(apiBase, path, options)
+      activeApiBase = apiBase
+      return payload
+    } catch (error) {
+      latestError = error
+      const errorStatus = (error as RequestError)?.status
+      const isServerOrNetworkError = typeof errorStatus !== 'number' || errorStatus >= 500
+      const hasMoreCandidates = index < candidateBases.length - 1
+
+      if (!(canTryFallbackBases && isServerOrNetworkError && hasMoreCandidates)) {
+        throw error
+      }
+    }
+  }
+
+  if (latestError instanceof Error) {
+    throw latestError
+  }
+
+  throw new Error('Request failed')
 }
 
 export async function login(email: string, password: string): Promise<LoginResponse> {

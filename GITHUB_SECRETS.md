@@ -6,7 +6,7 @@ To enable automatic deployment to Hostinger, configure these secrets in your Git
 
 1. Go to: **https://github.com/usmc1371nerd/network-portfolio/settings/secrets/actions**
 
-2. Click **"New repository secret"** and add these three secrets:
+2. Click **"New repository secret"** and add these four secrets:
 
 ### 1. `HOSTINGER_FTP_SERVER`
 - **Value**: Your Hostinger FTP server (e.g., `ftp.yoursite.com`)
@@ -21,6 +21,11 @@ To enable automatic deployment to Hostinger, configure these secrets in your Git
 - **Where to find**: Hostinger Control Panel → FTP Accounts
 - **⚠️ Security**: This password is encrypted and only used by GitHub Actions
 
+### 4. `VITE_API_BASE_URL`
+- **Value**: Your backend API base URL including `/api`
+- **Example**: `https://api.jpsportfolio.com/api`
+- **Why**: Frontend build pins to this URL so production API calls do not break when hostname assumptions change
+
 ## How It Works
 
 Once secrets are configured, when you:
@@ -33,6 +38,7 @@ The workflow automatically:
 1. ✅ Checks out code
 2. ✅ Builds production bundle
 3. ✅ **Deploys the frontend to Hostinger via FTP**
+4. ✅ Uses `VITE_API_BASE_URL` at build time for stable backend connection
 
 If you also push a version tag:
 
@@ -55,6 +61,11 @@ The release workflow also:
 - Ensure public_html directory exists on Hostinger
 - Check FTP account has write permissions
 - Verify `.htaccess` is being uploaded (needed for SPA routing)
+
+**"Blog/API calls fail after deploy"**
+- Verify `VITE_API_BASE_URL` secret includes the full `/api` suffix
+- Test API health directly: `https://api.your-domain.com/api/health`
+- Confirm backend `CLIENT_ORIGIN` includes both `https://your-domain.com` and `https://www.your-domain.com`
 
 **"Deployment succeeded but site still shows old content"**
 - Force refresh in browser: `Ctrl+Shift+R` (or `Cmd+Shift+R` on Mac)
