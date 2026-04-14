@@ -26,15 +26,24 @@ To enable automatic deployment to Hostinger, configure these secrets in your Git
 Once secrets are configured, when you:
 
 ```bash
-git push origin master --tags  # e.g., git push origin master --tags for v1.1.0
+git push origin master
 ```
 
 The workflow automatically:
 1. ✅ Checks out code
 2. ✅ Builds production bundle
-3. ✅ Runs TypeScript check
-4. ✅ Creates GitHub Release
-5. ✅ **Deploys to Hostinger via FTP** (NEW!)
+3. ✅ **Deploys the frontend to Hostinger via FTP**
+
+If you also push a version tag:
+
+```bash
+git push origin master --tags
+```
+
+The release workflow also:
+1. ✅ Runs TypeScript check
+2. ✅ Creates a GitHub Release
+3. ✅ Runs the existing tag-based deployment jobs
 
 ## Troubleshooting
 
@@ -54,7 +63,13 @@ The workflow automatically:
 
 ## Testing the Deployment
 
-To test the workflow without deploying:
+To test the frontend deploy workflow:
+
+```bash
+git push origin master
+```
+
+To test the release workflow without a real deployment target:
 
 ```bash
 # Create a test tag locally

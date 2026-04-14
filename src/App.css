@@ -92,9 +92,26 @@
 }
 
 .main-layout {
+  position: relative;
   display: grid;
   grid-template-columns: 220px 1fr;
   min-height: 0;
+}
+
+.canvas-guide-popup {
+  position: absolute;
+  top: 1rem;
+  left: calc(220px + 1rem);
+  border: 1px solid rgba(0, 255, 195, 0.55);
+  background: rgba(11, 16, 32, 0.94);
+  color: #e6edf3;
+  padding: 0.55rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  box-shadow: 0 0 18px rgba(0, 255, 195, 0.14);
+  z-index: 5;
+  pointer-events: none;
 }
 
 .device-panel {
@@ -355,6 +372,10 @@
 
   .main-layout {
     grid-template-columns: 170px 1fr;
+  }
+
+  .canvas-guide-popup {
+    left: calc(170px + 1rem);
   }
 
   .bottom-panel {

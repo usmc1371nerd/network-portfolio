@@ -120,6 +120,7 @@ function App() {
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [historyCursor, setHistoryCursor] = useState<number | null>(null)
   const [historyDraftInput, setHistoryDraftInput] = useState('')
+  const [showCanvasGuide, setShowCanvasGuide] = useState(false)
   const [terminalContext, setTerminalContext] = useState<TerminalContext>({
     connected: false,
     connectedTo: null,
@@ -672,6 +673,25 @@ function App() {
     [],
   )
 
+  useEffect(() => {
+    const shouldShowGuide = helpEnabled && terminalContext.onboardingStep === 'drop-pc-1' && nodeCount === 1
+
+    if (!shouldShowGuide) {
+      setShowCanvasGuide(false)
+      return
+    }
+
+    setShowCanvasGuide(true)
+
+    const timeoutId = window.setTimeout(() => {
+      setShowCanvasGuide(false)
+    }, 5000)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [helpEnabled, nodeCount, terminalContext.onboardingStep])
+
   if (isMobileDevice && !allowMobileLab) {
     return (
       <div className="lab-root lab-root--mobile">
@@ -711,6 +731,7 @@ function App() {
       <div className="lab-root">
         <TopBar onLaunchGuiMode={handleLaunchGuiMode} helpEnabled={helpEnabled} onToggleHelp={handleToggleHelp} />
         <div className="main-layout">
+          {showCanvasGuide ? <div className="canvas-guide-popup">Drag a PC into the canvas to get started.</div> : null}
           <DevicePanel />
           <NetworkCanvas
             nodes={decoratedNodes}
