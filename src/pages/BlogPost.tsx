@@ -3,6 +3,12 @@ import { useParams } from 'react-router-dom'
 import { MarkdownRenderer } from '../components/MarkdownRenderer'
 import { getPostBySlug, type BlogPost } from '../services/api'
 
+function getFriendlyBlogErrorMessage(message: string): string {
+  return /internal server error/i.test(message)
+    ? 'Sorry, we seem to have a failure to communicate.'
+    : message
+}
+
 export function BlogPost() {
   const { slug } = useParams()
   const [post, setPost] = useState<BlogPost | null>(null)
@@ -21,7 +27,11 @@ export function BlogPost() {
         const data = await getPostBySlug(slug)
         setPost(data)
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : 'Failed to load post')
+        setError(
+          loadError instanceof Error
+            ? getFriendlyBlogErrorMessage(loadError.message)
+            : 'Failed to load post',
+        )
       } finally {
         setLoading(false)
       }

@@ -2,6 +2,12 @@ import { useEffect, useState } from 'react'
 import { BlogCard } from '../components/BlogCard'
 import { getPosts, type BlogPost } from '../services/api'
 
+function getFriendlyBlogErrorMessage(message: string): string {
+  return /internal server error/i.test(message)
+    ? 'Sorry, we seem to have a failure to communicate.'
+    : message
+}
+
 export function BlogList() {
   const [posts, setPosts] = useState<BlogPost[]>([])
   const [loading, setLoading] = useState(true)
@@ -13,7 +19,11 @@ export function BlogList() {
         const data = await getPosts({ scope: 'published' })
         setPosts(data)
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : 'Failed to load posts')
+        setError(
+          loadError instanceof Error
+            ? getFriendlyBlogErrorMessage(loadError.message)
+            : 'Failed to load posts',
+        )
       } finally {
         setLoading(false)
       }
