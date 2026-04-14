@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ReactFlowProvider,
@@ -28,6 +28,8 @@ import {
 export type LabNodeData = {
   label: string
   ip?: string
+  isConnected?: boolean
+  showGuideHint?: boolean
 }
 
 const initialNodes: Node<LabNodeData>[] = [
@@ -68,6 +70,44 @@ function allocateNextDhcpIp(assignedIps: string[]): string | null {
   return null
 }
 
+function longestCommonPrefix(values: string[]): string {
+  if (values.length === 0) {
+    return ''
+  }
+
+  let prefix = values[0]
+
+  for (let index = 1; index < values.length; index += 1) {
+    const currentValue = values[index]
+    while (!currentValue.startsWith(prefix) && prefix.length > 0) {
+      prefix = prefix.slice(0, -1)
+    }
+    if (!prefix) {
+      break
+    }
+  }
+
+  return prefix
+}
+
+function getDirectoryForPath(
+  root: Record<string, unknown>,
+  path: string[],
+): Record<string, unknown> | null {
+  let cursor: Record<string, unknown> = root
+
+  for (const segment of path) {
+    const nextNode = cursor[segment]
+    if (!nextNode || typeof nextNode === 'string') {
+      return null
+    }
+
+    cursor = nextNode as Record<string, unknown>
+  }
+
+  return cursor
+}
+
 function App() {
   const navigate = useNavigate()
   const [isMobileDevice, setIsMobileDevice] = useState(false)
@@ -77,15 +117,25 @@ function App() {
   const [packetLogs, setPacketLogs] = useState<string[]>([])
   const [terminalLines, setTerminalLines] = useState<string[]>(initialTerminalLines)
   const [terminalInput, setTerminalInput] = useState('')
+  const [commandHistory, setCommandHistory] = useState<string[]>([])
+  const [historyCursor, setHistoryCursor] = useState<number | null>(null)
+  const [historyDraftInput, setHistoryDraftInput] = useState('')
   const [terminalContext, setTerminalContext] = useState<TerminalContext>({
     connected: false,
     connectedTo: null,
     connectedLabel: null,
     connectedIp: null,
     currentPath: [],
+    onboardingStep: 'drop-pc-1',
   })
   const [nodeCount, setNodeCount] = useState(1)
   const [assignedPcIps, setAssignedPcIps] = useState<string[]>([])
+  const [packetAnimation, setPacketAnimation] = useState<{
+    fromNodeId: string
+    toNodeId: string
+    pulse: number
+  } | null>(null)
+  const packetAnimationTimeoutRef = useRef<number | null>(null)
 
   const nodeTypes = useMemo(
     () => ({
@@ -135,10 +185,111 @@ function App() {
     [edges],
   )
 
+  const connectedNodeIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const edge of edges) {
+      ids.add(edge.source)
+      ids.add(edge.target)
+    }
+    return ids
+  }, [edges])
+
+  const ipToNodeId = useMemo(() => {
+    const map = new Map<string, string>()
+    map.set(serverNodeData.ip, 'jp-server')
+
+    for (const node of nodes) {
+      if (node.type === 'pcNode' && node.data.ip) {
+        map.set(node.data.ip, node.id)
+      }
+    }
+
+    return map
+  }, [nodes, serverNodeData.ip])
+
+  const triggerPacketAnimation = useCallback(
+    (fromNodeId: string, toNodeId: string, requireExistingEdge = true) => {
+      const hasMatchingEdge = edges.some(
+        (edge) =>
+          (edge.source === fromNodeId && edge.target === toNodeId) ||
+          (edge.source === toNodeId && edge.target === fromNodeId),
+      )
+
+      if (requireExistingEdge && !hasMatchingEdge) {
+        return
+      }
+
+      setPacketAnimation((currentPacket) => ({
+        fromNodeId,
+        toNodeId,
+        pulse: (currentPacket?.pulse ?? 0) + 1,
+      }))
+
+      if (packetAnimationTimeoutRef.current) {
+        window.clearTimeout(packetAnimationTimeoutRef.current)
+      }
+
+      packetAnimationTimeoutRef.current = window.setTimeout(() => {
+        setPacketAnimation(null)
+        packetAnimationTimeoutRef.current = null
+      }, 1125)
+    },
+    [edges],
+  )
+
+  const decoratedNodes = useMemo(
+    () =>
+      nodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          isConnected: connectedNodeIds.has(node.id),
+          showGuideHint: node.id === 'pc-1' && terminalContext.onboardingStep === 'type-help',
+        },
+      })),
+    [connectedNodeIds, nodes, terminalContext.onboardingStep],
+  )
+
+  const decoratedEdges = useMemo(
+    () =>
+      edges.map((edge) => ({
+        ...edge,
+        data: {
+          ...edge.data,
+          showPacket:
+            Boolean(packetAnimation) &&
+            ((edge.source === packetAnimation?.fromNodeId &&
+              edge.target === packetAnimation?.toNodeId) ||
+              (edge.source === packetAnimation?.toNodeId &&
+                edge.target === packetAnimation?.fromNodeId)),
+          packetDirection:
+            packetAnimation &&
+            edge.source === packetAnimation.fromNodeId &&
+            edge.target === packetAnimation.toNodeId
+              ? 'forward'
+              : 'reverse',
+          packetKey:
+            packetAnimation &&
+            ((edge.source === packetAnimation.fromNodeId &&
+              edge.target === packetAnimation.toNodeId) ||
+              (edge.source === packetAnimation.toNodeId &&
+                edge.target === packetAnimation.fromNodeId))
+              ? packetAnimation.pulse
+              : 0,
+        },
+      })),
+    [edges, packetAnimation],
+  )
+
   const handleConnect = useCallback(
     (connection: Connection) => {
+      if (!connection.source || !connection.target) {
+        return
+      }
+
+      const newEdgeId = `${connection.source}-${connection.target}-${Date.now()}`
       setEdges((currentEdges) =>
-        addEdge({ ...connection, type: 'connectionLine', animated: true }, currentEdges),
+        addEdge({ id: newEdgeId, ...connection, type: 'connectionLine', animated: true }, currentEdges),
       )
 
       const sourceNode = nodes.find((node) => node.id === connection.source)
@@ -146,9 +297,19 @@ function App() {
       const sourcePc = sourceNode?.type === 'pcNode' ? sourceNode.data.label ?? null : null
       const targetPc = targetNode?.type === 'pcNode' ? targetNode.data.label ?? null : null
 
+      if (
+        (connection.source === 'pc-1' && connection.target === 'jp-server') ||
+        (connection.source === 'jp-server' && connection.target === 'pc-1')
+      ) {
+        const directionFrom = connection.source === 'pc-1' ? 'pc-1' : 'jp-server'
+        const directionTo = directionFrom === 'pc-1' ? 'jp-server' : 'pc-1'
+
+        triggerPacketAnimation(directionFrom, directionTo, false)
+      }
+
       setPacketLogs((currentLogs) => [...currentLogs, ...getConnectionLogs(sourcePc ?? targetPc)])
     },
-    [nodes, setEdges],
+    [nodes, setEdges, triggerPacketAnimation],
   )
 
   const handleAddPcNode = useCallback(
@@ -196,6 +357,12 @@ function App() {
         'connect:',
         `ssh guest@${assignedIp}`,
       ])
+      if (nextLabel === 'PC-1') {
+        setTerminalContext((currentContext) => ({
+          ...currentContext,
+          onboardingStep: 'type-help',
+        }))
+      }
     },
     [assignedPcIps, nodeCount, setNodes],
   )
@@ -206,6 +373,10 @@ function App() {
     if (!command) {
       return
     }
+
+    setCommandHistory((currentHistory) => [...currentHistory, command])
+    setHistoryCursor(null)
+    setHistoryDraftInput('')
 
     const prompt = buildPrompt(terminalContext)
     const result = processTerminalCommand(command, terminalContext, serverFileSystem, {
@@ -224,10 +395,245 @@ function App() {
       return
     }
 
+    if (result.packetEvent) {
+      const fromNodeId = ipToNodeId.get(result.packetEvent.fromIp)
+      const toNodeId = ipToNodeId.get(result.packetEvent.toIp)
+
+      if (fromNodeId && toNodeId) {
+        triggerPacketAnimation(fromNodeId, toNodeId)
+      }
+    }
+
     setTerminalLines((currentLines) => [...currentLines, `${prompt} ${command}`, ...result.output])
 
     setTerminalInput('')
-  }, [hasServerConnection, knownNodeIps, pcNodes, serverNodeData, terminalContext, terminalInput])
+  }, [
+    hasServerConnection,
+    ipToNodeId,
+    knownNodeIps,
+    pcNodes,
+    serverNodeData,
+    terminalContext,
+    terminalInput,
+    triggerPacketAnimation,
+  ])
+
+  const handleTerminalInputChange = useCallback((value: string) => {
+    setTerminalInput(value)
+    if (historyCursor !== null) {
+      setHistoryCursor(null)
+      setHistoryDraftInput('')
+    }
+  }, [historyCursor])
+
+  const handleAutocomplete = useCallback(() => {
+    const trimmed = terminalInput.trim()
+    if (!trimmed) {
+      return
+    }
+
+    const baseCommands =
+      terminalContext.connectedTo === 'server'
+        ? ['help', 'ping', 'ssh', 'whoami', 'ls', 'cd', 'cat', 'clear']
+        : ['help', 'ping', 'ssh', 'whoami', 'clear']
+    const sectionAliases = new Map<string, string>([['certification', 'certifications']])
+    const sectionKeywords = terminalContext.connectedTo === 'server' ? Object.keys(serverFileSystem) : []
+
+    const knownIps = Array.from(knownNodeIps).sort()
+    const parts = trimmed.split(/\s+/)
+
+    if (parts.length === 1 && !terminalInput.endsWith(' ')) {
+      const commandPrefix = parts[0].toLowerCase()
+      const keywordCandidates = sectionKeywords
+        .map((keyword) => keyword.toLowerCase())
+        .concat(Array.from(sectionAliases.keys()))
+
+      const candidates = [...baseCommands, ...keywordCandidates].filter((cmd) =>
+        cmd.startsWith(commandPrefix),
+      )
+      if (candidates.length === 0) {
+        return
+      }
+
+      const completion =
+        candidates.length === 1 ? candidates[0] : longestCommonPrefix(candidates)
+
+      if (!completion) {
+        return
+      }
+
+      const requiresArg = ['ping', 'ssh', 'cd', 'cat'].includes(completion)
+
+      if (requiresArg) {
+        setTerminalInput(`${completion} `)
+        return
+      }
+
+      if (!baseCommands.includes(completion) && terminalContext.connectedTo === 'server') {
+        const mappedKeyword = sectionAliases.get(completion) ?? completion
+        setTerminalInput(`cd ${mappedKeyword}`)
+        return
+      }
+
+      setTerminalInput(completion)
+      return
+    }
+
+    const command = parts[0].toLowerCase()
+    const argPrefix = terminalInput.endsWith(' ') ? '' : parts[parts.length - 1]
+
+    if (command === 'ping') {
+      const candidates = knownIps.filter((ip) => ip.startsWith(argPrefix))
+      if (candidates.length === 1) {
+        setTerminalInput(`ping ${candidates[0]}`)
+      } else if (candidates.length > 1) {
+        const prefix = longestCommonPrefix(candidates)
+        if (prefix) {
+          setTerminalInput(`ping ${prefix}`)
+        }
+      }
+      return
+    }
+
+    if (command === 'ssh') {
+      const targetCandidates = knownIps.map((ip) => `guest@${ip}`)
+      const allCandidates = [...targetCandidates, ...knownIps]
+      const candidates = allCandidates.filter((candidate) => candidate.startsWith(argPrefix))
+
+      if (candidates.length === 1) {
+        setTerminalInput(`ssh ${candidates[0]}`)
+      } else if (candidates.length > 1) {
+        const prefix = longestCommonPrefix(candidates)
+        if (prefix) {
+          setTerminalInput(`ssh ${prefix}`)
+        }
+      }
+      return
+    }
+
+    if (command === 'cd' && terminalContext.connectedTo === 'server') {
+      const currentDir = getDirectoryForPath(
+        serverFileSystem as Record<string, unknown>,
+        terminalContext.currentPath,
+      )
+
+      if (!currentDir) {
+        return
+      }
+
+      const directoryCandidates = Object.entries(currentDir)
+        .filter(([, value]) => typeof value !== 'string')
+        .map(([name]) => name)
+      const normalizedPrefix = argPrefix.toLowerCase()
+      const aliasCandidates = Array.from(sectionAliases.entries())
+        .filter(([, canonical]) => directoryCandidates.includes(canonical))
+        .map(([alias]) => alias)
+
+      const candidates = [...directoryCandidates, ...aliasCandidates].filter((candidate) =>
+        candidate.toLowerCase().startsWith(normalizedPrefix),
+      )
+
+      if (candidates.length === 1) {
+        const resolved = sectionAliases.get(candidates[0]) ?? candidates[0]
+        setTerminalInput(`cd ${resolved}`)
+      } else if (candidates.length > 1) {
+        const prefix = longestCommonPrefix(candidates.map((candidate) => candidate.toLowerCase()))
+        if (prefix) {
+          const resolved = sectionAliases.get(prefix) ?? prefix
+          setTerminalInput(`cd ${resolved}`)
+        }
+      }
+      return
+    }
+
+    if (command === 'cat' && terminalContext.connectedTo === 'server') {
+      const currentDir = getDirectoryForPath(
+        serverFileSystem as Record<string, unknown>,
+        terminalContext.currentPath,
+      )
+
+      if (!currentDir) {
+        return
+      }
+
+      const fileCandidates = Object.entries(currentDir)
+        .filter(([, value]) => typeof value === 'string')
+        .map(([name]) => name)
+      const candidates = fileCandidates.filter((fileName) => fileName.startsWith(argPrefix))
+
+      if (candidates.length === 1) {
+        setTerminalInput(`cat ${candidates[0]}`)
+      } else if (candidates.length > 1) {
+        const prefix = longestCommonPrefix(candidates)
+        if (prefix) {
+          setTerminalInput(`cat ${prefix}`)
+        }
+      }
+    }
+  }, [knownNodeIps, terminalContext.connectedTo, terminalContext.currentPath, terminalInput])
+
+  const handleTerminalKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        handleTerminalSubmit()
+        return
+      }
+
+      if (event.key === 'Tab') {
+        event.preventDefault()
+        handleAutocomplete()
+        return
+      }
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+
+        if (commandHistory.length === 0) {
+          return
+        }
+
+        if (historyCursor === null) {
+          setHistoryDraftInput(terminalInput)
+          const nextIndex = commandHistory.length - 1
+          setHistoryCursor(nextIndex)
+          setTerminalInput(commandHistory[nextIndex])
+          return
+        }
+
+        const nextIndex = Math.max(0, historyCursor - 1)
+        setHistoryCursor(nextIndex)
+        setTerminalInput(commandHistory[nextIndex])
+        return
+      }
+
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+
+        if (historyCursor === null) {
+          return
+        }
+
+        if (historyCursor >= commandHistory.length - 1) {
+          setHistoryCursor(null)
+          setTerminalInput(historyDraftInput)
+          return
+        }
+
+        const nextIndex = historyCursor + 1
+        setHistoryCursor(nextIndex)
+        setTerminalInput(commandHistory[nextIndex])
+      }
+    },
+    [
+      commandHistory,
+      handleAutocomplete,
+      handleTerminalSubmit,
+      historyCursor,
+      historyDraftInput,
+      terminalInput,
+    ],
+  )
 
   const handleLaunchGuiMode = useCallback(() => {
     navigate('/gui')
@@ -249,6 +655,15 @@ function App() {
       window.removeEventListener('orientationchange', updateViewportMode)
     }
   }, [])
+
+  useEffect(
+    () => () => {
+      if (packetAnimationTimeoutRef.current) {
+        window.clearTimeout(packetAnimationTimeoutRef.current)
+      }
+    },
+    [],
+  )
 
   if (isMobileDevice && !allowMobileLab) {
     return (
@@ -291,8 +706,8 @@ function App() {
         <div className="main-layout">
           <DevicePanel />
           <NetworkCanvas
-            nodes={nodes}
-            edges={edges}
+            nodes={decoratedNodes}
+            edges={decoratedEdges}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
@@ -306,8 +721,8 @@ function App() {
             lines={terminalLines}
             inputValue={terminalInput}
             prompt={buildPrompt(terminalContext)}
-            onInputChange={setTerminalInput}
-            onSubmit={handleTerminalSubmit}
+            onInputChange={handleTerminalInputChange}
+            onKeyDown={handleTerminalKeyDown}
           />
           <PacketLogPanel logs={packetLogs} />
         </div>

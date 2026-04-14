@@ -1,11 +1,11 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 
 type TerminalPanelProps = {
   lines: string[]
   inputValue: string
   prompt: string
   onInputChange: (value: string) => void
-  onSubmit: () => void
+  onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement>) => void
 }
 
 export function TerminalPanel({
@@ -13,7 +13,7 @@ export function TerminalPanel({
   inputValue,
   prompt,
   onInputChange,
-  onSubmit,
+  onKeyDown,
 }: TerminalPanelProps) {
   const outputRef = useRef<HTMLDivElement | null>(null)
 
@@ -40,12 +40,7 @@ export function TerminalPanel({
           type="text"
           value={inputValue}
           onChange={(event) => onInputChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              onSubmit()
-            }
-          }}
+          onKeyDown={onKeyDown}
           autoComplete="off"
           spellCheck={false}
         />

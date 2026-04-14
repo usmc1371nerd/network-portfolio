@@ -6,12 +6,17 @@ export type TerminalContext = {
   connectedLabel: string | null
   connectedIp: string | null
   currentPath: string[]
+  onboardingStep: 'drop-pc-1' | 'type-help' | 'ssh-pc-1' | 'ssh-server' | 'done'
 }
 
 type TerminalResult = {
   output: string[]
   context: TerminalContext
   clear?: boolean
+  packetEvent?: {
+    fromIp: string
+    toIp: string
+  }
 }
 
 type TerminalRuntime = {
@@ -91,6 +96,8 @@ export function processTerminalCommand(
   fsRoot: Record<string, FileSystemNode>,
   runtime: TerminalRuntime,
 ): TerminalResult {
+  const pc1Entry = Array.from(runtime.pcNodes.entries()).find(([, label]) => label === 'PC-1')
+  const pc1Ip = pc1Entry?.[0] ?? '10.0.0.10'
   const args = input.split(/\s+/)
   const command = args[0].toLowerCase()
 
@@ -103,6 +110,26 @@ export function processTerminalCommand(
   }
 
   if (command === 'help') {
+    if (context.onboardingStep === 'type-help' || context.onboardingStep === 'ssh-pc-1') {
+      const needsConnectionGuide = !runtime.serverReachable
+
+      return {
+        output: needsConnectionGuide
+          ? [
+              'Hi there! Welcome. First, connect PC-1 to JP Server in the canvas by clicking the little connector and dragging the line to the server.',
+              `Then SSH into PC-1 using ssh guest@${pc1Ip}.`,
+            ]
+          : [
+              `Hi there! Welcome. First things first, SSH into PC-1 using ssh guest@${pc1Ip}.`,
+              'PC-1 is connected. You can continue in the terminal.',
+            ],
+        context: {
+          ...context,
+          onboardingStep: 'ssh-pc-1',
+        },
+      }
+    }
+
     const serverCmds = ['help', 'ping <ip>', 'ssh <ip>', 'whoami', 'ls', 'cd <directory>', 'cat <file>', 'clear']
     const firstPcIp = runtime.pcNodes.keys().next().value as string | undefined
     const helpPcIp =
@@ -156,9 +183,22 @@ export function processTerminalCommand(
       }
     }
 
+    const sourceIp =
+      context.connectedTo === 'server'
+        ? runtime.serverIp
+        : context.connectedTo === 'pc' && context.connectedIp
+          ? context.connectedIp
+          : null
+
     return {
       output: [`Pinging ${targetIp} ...`, `Reply from ${targetIp}: bytes=32 time=3ms TTL=64`],
       context,
+      packetEvent: sourceIp
+        ? {
+            fromIp: sourceIp,
+            toIp: targetIp,
+          }
+        : undefined,
     }
   }
 
@@ -190,18 +230,30 @@ export function processTerminalCommand(
     // PC connection — passwordless guest login
     const pcLabel = runtime.pcNodes.get(targetIp)
     if (pcLabel) {
+      const isGuidedPc1Login =
+        pcLabel === 'PC-1' &&
+        (context.onboardingStep === 'ssh-pc-1' || context.onboardingStep === 'type-help')
+
       return {
-        output: [
-          `connecting to ${targetIp}...`,
-          `connected to ${pcLabel} (${targetIp})`,
-          'guest session loaded',
-        ],
+        output: isGuidedPc1Login
+          ? [
+              `connecting to ${targetIp}...`,
+              `connected to ${pcLabel} (${targetIp})`,
+              'guest session loaded',
+              `hello welcome to the network now ssh into the server using ssh guest@${runtime.serverIp}..`,
+            ]
+          : [
+              `connecting to ${targetIp}...`,
+              `connected to ${pcLabel} (${targetIp})`,
+              'guest session loaded',
+            ],
         context: {
           connected: true,
           connectedTo: 'pc',
           connectedLabel: pcLabel,
           connectedIp: targetIp,
           currentPath: [],
+          onboardingStep: isGuidedPc1Login ? 'ssh-server' : context.onboardingStep,
         },
       }
     }
@@ -236,6 +288,7 @@ export function processTerminalCommand(
         connectedLabel: 'JP-SERVER',
         connectedIp: '10.0.0.1',
         currentPath: [],
+        onboardingStep: 'done',
       },
     }
   }
