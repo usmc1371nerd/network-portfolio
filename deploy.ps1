@@ -11,19 +11,19 @@ $LOCAL_DIST_PATH = Join-Path -Path (Get-Location) -ChildPath 'dist'
 $PACKAGE = Get-Content 'package.json' -Raw | ConvertFrom-Json
 $VERSION = $PACKAGE.version
 
-Write-Host "╔════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║  Network Portfolio Deployment Tool v1.0    ║" -ForegroundColor Cyan
-Write-Host "╚════════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "================================================" -ForegroundColor Cyan
+Write-Host "  Network Portfolio Deployment Tool v1.0      " -ForegroundColor Cyan
+Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
 
 # Verify dist exists
 if (-not (Test-Path $LOCAL_DIST_PATH)) {
-    Write-Host "✗ Error: dist folder not found" -ForegroundColor Red
+    Write-Host "[-] Error: dist folder not found" -ForegroundColor Red
     Write-Host "  Run: npm run build" -ForegroundColor Yellow
     exit 1
 }
 
-Write-Host "📦 Preparing deployment..." -ForegroundColor Green
+Write-Host "[*] Preparing deployment..." -ForegroundColor Green
 Write-Host "   Version: $VERSION"
 Write-Host "   Source: $LOCAL_DIST_PATH"
 Write-Host "   Target: ftp://$FTP_SERVER$FTP_REMOTE_PATH"
@@ -31,7 +31,7 @@ Write-Host ""
 
 # Check for credentials
 if (-not $FTP_SERVER -or -not $FTP_USER -or -not $FTP_PASSWORD) {
-    Write-Host "⚠️  Error: FTP credentials not found in environment variables" -ForegroundColor Yellow
+    Write-Host "[!] Error: FTP credentials not found in environment variables" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "To set credentials, run:" -ForegroundColor Cyan
     Write-Host '$env:HOSTINGER_FTP_SERVER = "ftp.yoursite.com"' -ForegroundColor White
@@ -42,7 +42,7 @@ if (-not $FTP_SERVER -or -not $FTP_USER -or -not $FTP_PASSWORD) {
     exit 1
 }
 
-Write-Host "🔐 Connecting to FTP server..." -ForegroundColor Green
+Write-Host "[*] Connecting to FTP server..." -ForegroundColor Green
 
 # Create FTP session
 try {
@@ -55,15 +55,15 @@ try {
     $ftpRequest.Method = [System.Net.WebRequestMethods+Ftp]::ListDirectory
     
     $ftpResponse = $ftpRequest.GetResponse()
-    Write-Host "✓ Connected successfully" -ForegroundColor Green
+    Write-Host "[+] Connected successfully" -ForegroundColor Green
     $ftpResponse.Close()
 } catch {
-    Write-Host "✗ Connection failed: $_" -ForegroundColor Red
+    Write-Host "[-] Connection failed: $_" -ForegroundColor Red
     exit 1
 }
 
 Write-Host ""
-Write-Host "📤 Uploading files..." -ForegroundColor Green
+Write-Host "[*] Uploading files..." -ForegroundColor Green
 Write-Host ""
 
 # Function to upload files recursively
@@ -109,9 +109,9 @@ function Upload-FilesRecursive {
                 $response = $fileRequest.GetResponse()
                 $response.Close()
                 
-                Write-Host "   ✓ $($item.Name)" -ForegroundColor Green
+                Write-Host "   [+] $($item.Name)" -ForegroundColor Green
             } catch {
-                Write-Host "   ✗ $($item.Name): $_" -ForegroundColor Red
+                Write-Host "   [-] $($item.Name): $_" -ForegroundColor Red
             }
         }
     }
@@ -121,12 +121,12 @@ function Upload-FilesRecursive {
 Upload-FilesRecursive -localPath $LOCAL_DIST_PATH -remotePath $FTP_REMOTE_PATH -credential $credential
 
 Write-Host ""
-Write-Host "╔════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║  ✓ Deployment Complete!                   ║" -ForegroundColor Cyan
-Write-Host "╚════════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "================================================" -ForegroundColor Cyan
+Write-Host "  Deployment Complete!                        " -ForegroundColor Cyan
+Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "🌍 Frontend deployed to: https://your-domain.com" -ForegroundColor Green
-Write-Host "📝 Version: $VERSION" -ForegroundColor Green
+Write-Host "[+] Frontend deployed to: https://your-domain.com" -ForegroundColor Green
+Write-Host "[+] Version: $VERSION" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "  1. Visit https://your-domain.com in browser"
