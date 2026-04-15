@@ -58,3 +58,59 @@ jobs:
           local-dir: ./dist/
           server-dir: /public_html/
           state-name: .ftp-deploy-sync-state.json
+
+  deploy-backend:
+    runs-on: ubuntu-latest
+    name: Deploy Backend to Hostinger
+    needs: deploy-frontend
+    continue-on-error: true
+
+    steps:
+      - name: Deploy backend via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER }}
+          password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+          port: 65002
+          envs: DB_HOST,DB_PORT,DB_USER,DB_PASSWORD,DB_NAME,JWT_SECRET,JWT_EXPIRES_IN,SETUP_SECRET
+          script: |
+            set -e
+            cd ~/domains/api.jpsportfolio.com/nodejs
+
+            git pull origin master
+
+            if [ -n "$DB_HOST" ] && [ -n "$DB_USER" ] && [ -n "$DB_PASSWORD" ] && [ -n "$DB_NAME" ] && [ -n "$JWT_SECRET" ] && [ -n "$SETUP_SECRET" ]; then
+              cat > server/.env <<EOF
+PORT=4000
+CLIENT_ORIGIN=https://jpsportfolio.com,https://www.jpsportfolio.com
+DB_HOST=$DB_HOST
+DB_PORT=${DB_PORT:-3306}
+DB_USER=$DB_USER
+DB_PASSWORD=$DB_PASSWORD
+DB_NAME=$DB_NAME
+JWT_SECRET=$JWT_SECRET
+JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-8h}
+SETUP_ENABLED=false
+SETUP_SECRET=$SETUP_SECRET
+EOF
+              echo "server/.env written from GitHub Secrets"
+            else
+              echo "DB/JWT secrets not set; keeping existing server/.env"
+            fi
+
+            npm install --omit=dev
+            node server/scripts/checkDb.js
+
+            mkdir -p tmp
+            touch tmp/restart.txt
+            echo "Backend deployed and restarted"
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          JWT_EXPIRES_IN: ${{ secrets.JWT_EXPIRES_IN }}
+          SETUP_SECRET: ${{ secrets.SETUP_SECRET }}

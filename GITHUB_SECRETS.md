@@ -26,6 +26,47 @@ To enable automatic deployment to Hostinger, configure these secrets in your Git
 - **Example**: `https://api.jpsportfolio.com/api`
 - **Why**: Frontend build pins to this URL so production API calls do not break when hostname assumptions change
 
+---
+
+## Backend Deploy Secrets (required to auto-deploy Node.js server)
+
+### 5. `HOSTINGER_SSH_HOST`
+- **Value**: Your Hostinger server hostname (same as SSH host)
+- **Where to find**: Hostinger Control Panel → Hosting → SSH Access
+
+### 6. `HOSTINGER_SSH_USER`
+- **Value**: Your SSH username
+- **Where to find**: Hostinger Control Panel → Hosting → SSH Access
+
+### 7. `HOSTINGER_SSH_PASSWORD`
+- **Value**: Your SSH password or hosting account password
+- **Where to find**: Hostinger Control Panel → Hosting → SSH Access
+
+### 8. `DB_HOST`
+- **Value**: MySQL database host
+- **Where to find**: Hostinger Control Panel → Databases → MySQL → Connection details
+
+### 9. `DB_PORT`
+- **Value**: `3306` (default MySQL port)
+
+### 10. `DB_USER`
+- **Value**: MySQL username
+- **Where to find**: Same MySQL connection details page
+
+### 11. `DB_PASSWORD`
+- **Value**: MySQL password
+
+### 12. `DB_NAME`
+- **Value**: MySQL database name
+
+### 13. `JWT_SECRET`
+- **Value**: A long random string (min 32 characters) — used to sign admin login tokens
+- **Example**: generate with `openssl rand -hex 32`
+
+### 14. `SETUP_SECRET`
+- **Value**: A different long random string — used to bootstrap first admin account
+- **Example**: generate with `openssl rand -hex 32`
+
 ## How It Works
 
 Once secrets are configured, when you:
