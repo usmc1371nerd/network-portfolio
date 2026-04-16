@@ -10,7 +10,7 @@ export function Navbar() {
         <NavLink to="/gui/about">About</NavLink>
         <NavLink to="/gui/projects">Projects</NavLink>
         <NavLink to="/gui/experience">Experience</NavLink>
-        <NavLink to="/gui/blog">Blog</NavLink>
+        {/* <NavLink to="/gui/blog">Blog</NavLink> */}
         <NavLink to="/gui/contact">Contact</NavLink>
       </nav>
     </header>

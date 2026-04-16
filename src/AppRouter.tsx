@@ -4,8 +4,8 @@ import App from './App'
 // import { Footer } from './components/Footer.tsx'
 import { Navbar } from './components/Navbar'
 import { About } from './pages/About'
-import { BlogList } from './pages/BlogList.tsx'
-import { BlogPost } from './pages/BlogPost.tsx'
+// import { BlogList } from './pages/BlogList.tsx'
+// import { BlogPost } from './pages/BlogPost.tsx'
 import { Contact } from './pages/Contact.tsx'
 import { Experience } from './pages/Experience.tsx'
 import { Home } from './pages/Home'
@@ -77,8 +77,8 @@ export function AppRouter() {
         <Route path="about" element={<About />} />
         <Route path="projects" element={<Projects />} />
         <Route path="experience" element={<Experience />} />
-        <Route path="blog" element={<BlogList />} />
-        <Route path="blog/:slug" element={<BlogPost />} />
+        {/* <Route path="blog" element={<BlogList />} /> */}
+        {/* <Route path="blog/:slug" element={<BlogPost />} /> */}
         <Route path="contact" element={<Contact />} />
       </Route>
 
