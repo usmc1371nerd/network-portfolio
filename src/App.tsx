@@ -29,6 +29,7 @@ export type LabNodeData = {
   label: string
   ip?: string
   isConnected?: boolean
+  isActiveSession?: boolean
   showGuideHint?: boolean
 }
 
@@ -56,6 +57,13 @@ function getConnectionLogs(pcLabel: string | null): string[] {
     `[${getTimestamp(0)}] ARP reply from JP-SERVER`,
     `[${getTimestamp(1)}] TCP handshake established`,
     `[${getTimestamp(2)}] ${sourceLabel} joined JP-SERVER LAN (10.0.0.0/24); SSH route to 10.0.0.1 available`,
+  ]
+}
+
+function getLinkEstablishedLogs(sourceLabel: string, targetLabel: string): string[] {
+  return [
+    `[${getTimestamp(0)}] Link request accepted for ${sourceLabel} -> ${targetLabel}`,
+    `[${getTimestamp(1)}] Layer 2 link established`,
   ]
 }
 
@@ -196,6 +204,18 @@ function App() {
     return ids
   }, [edges])
 
+  const labelToNodeId = useMemo(() => {
+    const map = new Map<string, string>()
+
+    for (const node of nodes) {
+      if (node.data.label) {
+        map.set(node.data.label.toLowerCase(), node.id)
+      }
+    }
+
+    return map
+  }, [nodes])
+
   const ipToNodeId = useMemo(() => {
     const map = new Map<string, string>()
     map.set(serverNodeData.ip, 'jp-server')
@@ -246,10 +266,78 @@ function App() {
         data: {
           ...node.data,
           isConnected: connectedNodeIds.has(node.id),
-          showGuideHint: helpEnabled && node.id === 'pc-1' && terminalContext.onboardingStep === 'type-help',
+          isActiveSession:
+            terminalContext.connectedLabel !== null &&
+            node.data.label.toLowerCase() === terminalContext.connectedLabel.toLowerCase(),
+          showGuideHint: helpEnabled && node.id === 'pc-1' && terminalContext.onboardingStep === 'connect-pc-1',
         },
       })),
-    [connectedNodeIds, nodes, terminalContext.onboardingStep],
+    [connectedNodeIds, helpEnabled, nodes, terminalContext.connectedLabel, terminalContext.onboardingStep],
+  )
+
+  const suggestedCommand = useMemo(() => {
+    if (!helpEnabled) {
+      return null
+    }
+
+    if (terminalContext.onboardingStep === 'connect-pc-1') {
+      return 'connect pc-1'
+    }
+
+    if (terminalContext.onboardingStep === 'ssh-pc-1') {
+      return 'ssh pc-1'
+    }
+
+    if (terminalContext.onboardingStep === 'ssh-server') {
+      return 'ssh server'
+    }
+
+    if (terminalContext.onboardingStep === 'done' && terminalContext.connectedTo === 'server') {
+      return 'ls'
+    }
+
+    return null
+  }, [helpEnabled, terminalContext.connectedTo, terminalContext.onboardingStep])
+
+  const connectNodesById = useCallback(
+    (sourceId: string, targetId: string, shouldAnimateImmediately = true) => {
+      if (sourceId === targetId) {
+        return false
+      }
+
+      const hasMatchingEdge = edges.some(
+        (edge) =>
+          (edge.source === sourceId && edge.target === targetId) ||
+          (edge.source === targetId && edge.target === sourceId),
+      )
+
+      if (hasMatchingEdge) {
+        return false
+      }
+
+      const newEdgeId = `${sourceId}-${targetId}-${Date.now()}`
+      setEdges((currentEdges) =>
+        addEdge({ id: newEdgeId, source: sourceId, target: targetId, type: 'connectionLine', animated: true }, currentEdges),
+      )
+
+      const sourceNode = nodes.find((node) => node.id === sourceId)
+      const targetNode = nodes.find((node) => node.id === targetId)
+      const sourcePc = sourceNode?.type === 'pcNode' ? sourceNode.data.label ?? null : null
+      const targetPc = targetNode?.type === 'pcNode' ? targetNode.data.label ?? null : null
+
+      if (
+        (sourceId === 'pc-1' && targetId === 'jp-server') ||
+        (sourceId === 'jp-server' && targetId === 'pc-1')
+      ) {
+        triggerPacketAnimation(sourceId, targetId, false)
+      } else if (shouldAnimateImmediately) {
+        triggerPacketAnimation(sourceId, targetId, false)
+      }
+
+      setPacketLogs((currentLogs) => [...currentLogs, ...getConnectionLogs(sourcePc ?? targetPc)])
+      return true
+    },
+    [edges, nodes, setEdges, triggerPacketAnimation],
   )
 
   const decoratedEdges = useMemo(
@@ -288,30 +376,9 @@ function App() {
       if (!connection.source || !connection.target) {
         return
       }
-
-      const newEdgeId = `${connection.source}-${connection.target}-${Date.now()}`
-      setEdges((currentEdges) =>
-        addEdge({ id: newEdgeId, ...connection, type: 'connectionLine', animated: true }, currentEdges),
-      )
-
-      const sourceNode = nodes.find((node) => node.id === connection.source)
-      const targetNode = nodes.find((node) => node.id === connection.target)
-      const sourcePc = sourceNode?.type === 'pcNode' ? sourceNode.data.label ?? null : null
-      const targetPc = targetNode?.type === 'pcNode' ? targetNode.data.label ?? null : null
-
-      if (
-        (connection.source === 'pc-1' && connection.target === 'jp-server') ||
-        (connection.source === 'jp-server' && connection.target === 'pc-1')
-      ) {
-        const directionFrom = connection.source === 'pc-1' ? 'pc-1' : 'jp-server'
-        const directionTo = directionFrom === 'pc-1' ? 'jp-server' : 'pc-1'
-
-        triggerPacketAnimation(directionFrom, directionTo, false)
-      }
-
-      setPacketLogs((currentLogs) => [...currentLogs, ...getConnectionLogs(sourcePc ?? targetPc)])
+      connectNodesById(connection.source, connection.target)
     },
-    [nodes, setEdges, triggerPacketAnimation],
+    [connectNodesById],
   )
 
   const handleAddPcNode = useCallback(
@@ -353,24 +420,21 @@ function App() {
         'device detected:',
         `${nextLabel} assigned ${assignedIp}`,
         '',
-        'credentials:',
-        'guest (passwordless)',
-        '',
-        'connect:',
-        `ssh guest@${assignedIp}`,
+        'next step:',
+        `connect ${nextLabel.toLowerCase()}`,
       ])
       if (nextLabel === 'PC-1' && helpEnabled) {
         setTerminalContext((currentContext) => ({
           ...currentContext,
-          onboardingStep: 'type-help',
+          onboardingStep: 'connect-pc-1',
         }))
       }
     },
     [assignedPcIps, helpEnabled, nodeCount, setNodes],
   )
 
-  const handleTerminalSubmit = useCallback(() => {
-    const command = terminalInput.trim()
+  const executeTerminalCommand = useCallback((rawCommand: string) => {
+    const command = rawCommand.trim()
 
     if (!command) {
       return
@@ -407,20 +471,49 @@ function App() {
       }
     }
 
+    if (result.connectionEvent) {
+      const { sourceLabel, targetLabel } = result.connectionEvent
+      const sourceId = labelToNodeId.get(sourceLabel.toLowerCase())
+      const targetId = labelToNodeId.get(targetLabel.toLowerCase())
+
+      if (sourceId && targetId) {
+        const created = connectNodesById(sourceId, targetId)
+        if (created) {
+          setPacketLogs((currentLogs) => [
+            ...currentLogs,
+            ...getLinkEstablishedLogs(sourceLabel, targetLabel),
+          ])
+        }
+      }
+    }
+
     setTerminalLines((currentLines) => [...currentLines, `${prompt} ${command}`, ...result.output])
 
     setTerminalInput('')
   }, [
+    connectNodesById,
     hasServerConnection,
     helpEnabled,
     ipToNodeId,
     knownNodeIps,
+    labelToNodeId,
     pcNodes,
     serverNodeData,
     terminalContext,
-    terminalInput,
     triggerPacketAnimation,
   ])
+
+  const handleTerminalSubmit = useCallback(() => {
+    executeTerminalCommand(terminalInput)
+  }, [executeTerminalCommand, terminalInput])
+
+  const handleSuggestedCommand = useCallback(() => {
+    if (!suggestedCommand) {
+      return
+    }
+
+    executeTerminalCommand(suggestedCommand)
+  }, [executeTerminalCommand, suggestedCommand])
 
   const handleTerminalInputChange = useCallback((value: string) => {
     setTerminalInput(value)
@@ -439,7 +532,7 @@ function App() {
     const baseCommands =
       terminalContext.connectedTo === 'server'
         ? ['help', 'ping', 'ssh', 'whoami', 'ls', 'cd', 'cat', 'clear']
-        : ['help', 'ping', 'ssh', 'whoami', 'clear']
+        : ['help', 'ping', 'ssh', 'connect', 'whoami', 'clear']
     const sectionAliases = new Map<string, string>([['certification', 'certifications']])
     const sectionKeywords = terminalContext.connectedTo === 'server' ? Object.keys(serverFileSystem) : []
 
@@ -487,7 +580,8 @@ function App() {
     const argPrefix = terminalInput.endsWith(' ') ? '' : parts[parts.length - 1]
 
     if (command === 'ping') {
-      const candidates = knownIps.filter((ip) => ip.startsWith(argPrefix))
+      const candidates = ['server', ...Array.from(pcNodes.values()).map((label) => label.toLowerCase()), ...knownIps]
+        .filter((target) => target.startsWith(argPrefix.toLowerCase()))
       if (candidates.length === 1) {
         setTerminalInput(`ping ${candidates[0]}`)
       } else if (candidates.length > 1) {
@@ -500,8 +594,9 @@ function App() {
     }
 
     if (command === 'ssh') {
+      const labels = ['server', ...Array.from(pcNodes.values()).map((label) => label.toLowerCase())]
       const targetCandidates = knownIps.map((ip) => `guest@${ip}`)
-      const allCandidates = [...targetCandidates, ...knownIps]
+      const allCandidates = [...labels, ...targetCandidates, ...knownIps]
       const candidates = allCandidates.filter((candidate) => candidate.startsWith(argPrefix))
 
       if (candidates.length === 1) {
@@ -510,6 +605,37 @@ function App() {
         const prefix = longestCommonPrefix(candidates)
         if (prefix) {
           setTerminalInput(`ssh ${prefix}`)
+        }
+      }
+      return
+    }
+
+    if (command === 'connect') {
+      const labels = Array.from(pcNodes.values()).map((label) => label.toLowerCase())
+      const connectTargets = [...labels, 'server']
+      const candidates = connectTargets.filter((candidate) => candidate.startsWith(argPrefix.toLowerCase()))
+
+      if (parts.length <= 2) {
+        if (candidates.length === 1) {
+          setTerminalInput(`connect ${candidates[0]}`)
+        } else if (candidates.length > 1) {
+          const prefix = longestCommonPrefix(candidates)
+          if (prefix) {
+            setTerminalInput(`connect ${prefix}`)
+          }
+        }
+        return
+      }
+
+      const targetCandidates = ['server', ...labels].filter((candidate) =>
+        candidate.startsWith(argPrefix.toLowerCase()),
+      )
+      if (targetCandidates.length === 1) {
+        setTerminalInput(`connect ${parts[1]} ${targetCandidates[0]}`)
+      } else if (targetCandidates.length > 1) {
+        const prefix = longestCommonPrefix(targetCandidates)
+        if (prefix) {
+          setTerminalInput(`connect ${parts[1]} ${prefix}`)
         }
       }
       return
@@ -574,7 +700,7 @@ function App() {
         }
       }
     }
-  }, [knownNodeIps, terminalContext.connectedTo, terminalContext.currentPath, terminalInput])
+  }, [knownNodeIps, pcNodes, terminalContext.connectedTo, terminalContext.currentPath, terminalInput])
 
   const handleTerminalKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLInputElement>) => {
@@ -751,6 +877,8 @@ function App() {
             prompt={buildPrompt(terminalContext)}
             onInputChange={handleTerminalInputChange}
             onKeyDown={handleTerminalKeyDown}
+            suggestedCommand={suggestedCommand}
+            onRunSuggestedCommand={handleSuggestedCommand}
           />
           <PacketLogPanel logs={packetLogs} />
         </div>

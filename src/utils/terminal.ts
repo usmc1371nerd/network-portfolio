@@ -6,7 +6,7 @@ export type TerminalContext = {
   connectedLabel: string | null
   connectedIp: string | null
   currentPath: string[]
-  onboardingStep: 'drop-pc-1' | 'type-help' | 'ssh-pc-1' | 'ssh-server' | 'done'
+  onboardingStep: 'drop-pc-1' | 'connect-pc-1' | 'ssh-pc-1' | 'ssh-server' | 'done'
 }
 
 type TerminalResult = {
@@ -17,29 +17,39 @@ type TerminalResult = {
     fromIp: string
     toIp: string
   }
+  connectionEvent?: {
+    sourceLabel: string
+    targetLabel: string
+  }
 }
 
 type TerminalRuntime = {
   knownIps: Set<string>
   serverReachable: boolean
-  pcNodes: Map<string, string> // ip → label
+  pcNodes: Map<string, string>
   serverIp: string
   serverLabel: string
   helpEnabled: boolean
 }
 
+type ResolvedTarget = {
+  ip: string
+  label: string
+  kind: 'pc' | 'server'
+}
+
 export const initialTerminalLines = [
   "JP's Network Lab",
-  '────────────────────────────────',
+  '--------------------------------',
   '',
   'environment: simulated network lab',
   'purpose: interactive portfolio',
   '',
   'drag a PC onto the network to begin',
-  '────────────────────────────────',
+  '--------------------------------',
 ]
 
-const beforeSshCommands = ['help', 'ping', 'ssh', 'whoami', 'clear']
+const beforeSessionCommands = ['help', 'ping', 'ssh', 'connect', 'whoami', 'clear']
 
 function invalidCommandOutput(): string[] {
   return [
@@ -78,6 +88,41 @@ function printDirectory(node: Record<string, FileSystemNode>): string[] {
   )
 }
 
+function normalizeTarget(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+function resolveTarget(
+  rawTarget: string,
+  runtime: TerminalRuntime,
+): ResolvedTarget | null {
+  const target = normalizeTarget(rawTarget)
+
+  if (!target) {
+    return null
+  }
+
+  if (target === 'server' || target === runtime.serverLabel.toLowerCase() || target === runtime.serverIp) {
+    return {
+      ip: runtime.serverIp,
+      label: runtime.serverLabel,
+      kind: 'server',
+    }
+  }
+
+  for (const [ip, label] of runtime.pcNodes.entries()) {
+    if (target === ip || target === label.toLowerCase()) {
+      return {
+        ip,
+        label,
+        kind: 'pc',
+      }
+    }
+  }
+
+  return null
+}
+
 export function buildPrompt(context: TerminalContext): string {
   if (!context.connected || context.connectedTo === null) {
     return 'visitor@lab:$'
@@ -97,12 +142,10 @@ export function processTerminalCommand(
   fsRoot: Record<string, FileSystemNode>,
   runtime: TerminalRuntime,
 ): TerminalResult {
-  const pc1Entry = Array.from(runtime.pcNodes.entries()).find(([, label]) => label === 'PC-1')
-  const pc1Ip = pc1Entry?.[0] ?? '10.0.0.10'
   const args = input.split(/\s+/)
   const command = args[0].toLowerCase()
 
-  if (!context.connected && !beforeSshCommands.includes(command)) {
+  if (!context.connected && !beforeSessionCommands.includes(command)) {
     return { output: invalidCommandOutput(), context }
   }
 
@@ -111,44 +154,31 @@ export function processTerminalCommand(
   }
 
   if (command === 'help') {
-    if (runtime.helpEnabled && (context.onboardingStep === 'type-help' || context.onboardingStep === 'ssh-pc-1')) {
-      const needsConnectionGuide = !runtime.serverReachable
-
-      return {
-        output: needsConnectionGuide
-          ? [
-              'Hi there! Welcome. First, connect PC-1 to JP Server in the canvas by clicking the little connector and dragging the line to the server.',
-              `Then SSH into PC-1 using ssh guest@${pc1Ip}.`,
-            ]
-          : [
-              `Hi there! Welcome. First things first, SSH into PC-1 using ssh guest@${pc1Ip}.`,
-              'PC-1 is connected. You can continue in the terminal.',
-            ],
-        context: {
-          ...context,
-          onboardingStep: 'ssh-pc-1',
-        },
-      }
-    }
-
-    const serverCmds = ['help', 'ping <ip>', 'ssh <ip>', 'whoami', 'ls', 'cd <directory>', 'cat <file>', 'clear']
-    const firstPcIp = runtime.pcNodes.keys().next().value as string | undefined
-    const helpPcIp =
-      context.connectedTo === 'pc' && context.connectedIp
-        ? context.connectedIp
-        : firstPcIp ?? '10.0.0.10'
-    const helpServerTarget = `${runtime.serverLabel} (${runtime.serverIp})`
+    const serverCmds = [
+      'help',
+      'ping server',
+      'ssh server',
+      'whoami',
+      'ls',
+      'cd <directory>',
+      'cat <file>',
+      'clear',
+    ]
     const baseCmds = [
       'help',
-      'ping <ip>',
-      'ssh <ip>  or  ssh guest@<ip>',
+      'connect pc-1',
+      'ssh pc-1',
+      'ping server',
       'whoami',
       'clear',
       '',
-      'session flow:',
-      `1) ssh guest@${helpPcIp}   # enter PC-1`,
-      `2) ssh guest@${runtime.serverIp}    # access ${helpServerTarget} from PC-1`,
+      'guided flow:',
+      '1) drag a PC into the canvas',
+      '2) connect pc-1',
+      '3) ssh pc-1',
+      '4) ssh server',
     ]
+
     return {
       output: context.connectedTo === 'server' ? serverCmds : baseCmds,
       context,
@@ -165,10 +195,13 @@ export function processTerminalCommand(
   }
 
   if (command === 'ping') {
-    const targetIp = args[1]
-    if (!targetIp) {
-      return { output: ['usage: ping <ip>'], context }
+    const rawTarget = args[1]
+    if (!rawTarget) {
+      return { output: ['usage: ping <target>'], context }
     }
+
+    const target = resolveTarget(rawTarget, runtime)
+    const targetIp = target?.ip ?? rawTarget
 
     if (!runtime.knownIps.has(targetIp)) {
       return {
@@ -177,7 +210,7 @@ export function processTerminalCommand(
       }
     }
 
-    if (targetIp === '10.0.0.1' && !runtime.serverReachable) {
+    if (targetIp === runtime.serverIp && !runtime.serverReachable) {
       return {
         output: [`Pinging ${targetIp} ...`, `${targetIp}: host unreachable`],
         context,
@@ -203,13 +236,56 @@ export function processTerminalCommand(
     }
   }
 
+  if (command === 'connect') {
+    const sourceArg = args[1]
+    const targetArg = args[2] ?? 'server'
+
+    if (!sourceArg) {
+      return { output: ['usage: connect pc-1  or  connect pc-1 server'], context }
+    }
+
+    const source = resolveTarget(sourceArg, runtime)
+    if (!source || source.kind !== 'pc') {
+      return { output: [`connect: unknown device '${sourceArg}'`], context }
+    }
+
+    const target = resolveTarget(targetArg, runtime)
+    if (!target) {
+      return { output: [`connect: unknown device '${targetArg}'`], context }
+    }
+
+    if (source.ip === target.ip) {
+      return { output: ['connect: source and target must be different devices'], context }
+    }
+
+    return {
+      output: [
+        `connecting ${source.label} to ${target.label}...`,
+        `link established: ${source.label} <-> ${target.label}`,
+        `route available: ${source.label} -> ${target.ip}`,
+        `next step: ssh ${source.label.toLowerCase()}`,
+      ],
+      context: {
+        ...context,
+        onboardingStep:
+          source.label === 'PC-1' && target.kind === 'server'
+            ? 'ssh-pc-1'
+            : context.onboardingStep,
+      },
+      connectionEvent: {
+        sourceLabel: source.label,
+        targetLabel: target.label,
+      },
+    }
+  }
+
   if (command === 'ssh') {
     const rawArg = args[1]
     if (!rawArg) {
-      return { output: ['usage: ssh <ip>  or  ssh guest@<ip>'], context }
+      return { output: ['usage: ssh <target>'], context }
     }
 
-    const targetUser = rawArg.includes('@') ? rawArg.split('@')[0] : null
+    const targetUser = rawArg.includes('@') ? rawArg.split('@')[0].toLowerCase() : null
 
     if (targetUser && targetUser !== 'guest') {
       return {
@@ -218,8 +294,9 @@ export function processTerminalCommand(
       }
     }
 
-    // Accept both "ssh 10.0.0.1" and "ssh guest@10.0.0.1"
-    const targetIp = rawArg.includes('@') ? rawArg.split('@')[1] : rawArg
+    const rawTarget = rawArg.includes('@') ? rawArg.split('@')[1] : rawArg
+    const resolvedTarget = resolveTarget(rawTarget, runtime)
+    const targetIp = resolvedTarget?.ip ?? rawTarget
 
     if (!runtime.knownIps.has(targetIp)) {
       return {
@@ -228,12 +305,9 @@ export function processTerminalCommand(
       }
     }
 
-    // PC connection — passwordless guest login
     const pcLabel = runtime.pcNodes.get(targetIp)
     if (pcLabel) {
-      const isGuidedPc1Login =
-        pcLabel === 'PC-1' &&
-        (context.onboardingStep === 'ssh-pc-1' || context.onboardingStep === 'type-help')
+      const isGuidedPc1Login = pcLabel === 'PC-1' && context.onboardingStep === 'ssh-pc-1'
 
       return {
         output: isGuidedPc1Login
@@ -241,7 +315,7 @@ export function processTerminalCommand(
               `connecting to ${targetIp}...`,
               `connected to ${pcLabel} (${targetIp})`,
               'guest session loaded',
-              `hello welcome to the network now ssh into the server using ssh guest@${runtime.serverIp}..`,
+              'next step: ssh server',
             ]
           : [
               `connecting to ${targetIp}...`,
@@ -259,8 +333,7 @@ export function processTerminalCommand(
       }
     }
 
-    // Server connection
-    if (targetIp !== '10.0.0.1') {
+    if (targetIp !== runtime.serverIp) {
       return {
         output: [`ssh: connect to host ${targetIp} port 22: Connection refused`],
         context,
@@ -276,18 +349,18 @@ export function processTerminalCommand(
 
     if (context.connectedTo !== 'pc') {
       return {
-        output: ['Access denied: connect via PC-1 first'],
+        output: ['Access denied: connect to PC-1 first'],
         context,
       }
     }
 
     return {
-      output: ['connected to JP-SERVER (10.0.0.1)', 'guest session loaded'],
+      output: ['connected to JP-SERVER (10.0.0.1)', 'guest session loaded', 'try: ls'],
       context: {
         connected: true,
         connectedTo: 'server',
-        connectedLabel: 'JP-SERVER',
-        connectedIp: '10.0.0.1',
+        connectedLabel: runtime.serverLabel,
+        connectedIp: runtime.serverIp,
         currentPath: [],
         onboardingStep: 'done',
       },
