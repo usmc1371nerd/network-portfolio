@@ -68,6 +68,52 @@ function getLinkEstablishedLogs(sourceLabel: string, targetLabel: string): strin
   ]
 }
 
+function getCommandAuditLogs(options: {
+  command: string
+  prompt: string
+  previousContext: TerminalContext
+  nextContext: TerminalContext
+  output: string[]
+  openedFilePath?: string
+}): string[] {
+  const { command, prompt, previousContext, nextContext, output, openedFilePath } = options
+  const logs = [`[${getTimestamp()}] cmd: ${prompt} ${command}`]
+
+  if (previousContext.connectedTo !== nextContext.connectedTo) {
+    logs.push(
+      `[${getTimestamp()}] session: ${previousContext.connectedTo ?? 'visitor'} -> ${nextContext.connectedTo ?? 'visitor'}`,
+    )
+  }
+
+  if (!previousContext.shadowDiscovered && nextContext.shadowDiscovered) {
+    logs.push(`[${getTimestamp()}] recon: hidden host signature detected (10.0.13.37)`)
+  }
+
+  if (
+    previousContext.connectedTo !== 'shadow' &&
+    nextContext.connectedTo === 'shadow'
+  ) {
+    logs.push(`[${getTimestamp()}] access: hidden network access granted (${nextContext.connectedIp ?? '10.0.13.37'})`)
+  }
+
+  if (
+    previousContext.connectedTo === 'shadow' &&
+    nextContext.connectedTo !== 'shadow'
+  ) {
+    logs.push(`[${getTimestamp()}] access: exited hidden network and returned to lab`)
+  }
+
+  if (openedFilePath) {
+    logs.push(`[${getTimestamp()}] file: viewed ${openedFilePath}`)
+  }
+
+  if (output.some((line) => line.toLowerCase().includes('permission denied') || line.toLowerCase().includes('access denied'))) {
+    logs.push(`[${getTimestamp()}] auth: access denied`)
+  }
+
+  return logs
+}
+
 function allocateNextDhcpIp(assignedIps: string[]): string | null {
   for (let host = 10; host <= 50; host += 1) {
     const ip = `10.0.0.${host}`
@@ -542,8 +588,9 @@ function App() {
     setHistoryCursor(null)
     setHistoryDraftInput('')
 
-    const prompt = buildPrompt(terminalContext)
-    const result = processTerminalCommand(command, terminalContext, serverFileSystem, {
+    const previousContext = terminalContext
+    const prompt = buildPrompt(previousContext)
+    const result = processTerminalCommand(command, previousContext, serverFileSystem, {
       knownIps: knownNodeIps,
       serverReachable: hasServerConnection,
       pcNodes,
@@ -553,6 +600,16 @@ function App() {
     })
 
     setTerminalContext(result.context)
+
+    const auditLogs = getCommandAuditLogs({
+      command,
+      prompt,
+      previousContext,
+      nextContext: result.context,
+      output: result.output,
+      openedFilePath: result.openedFile?.path,
+    })
+    setPacketLogs((currentLogs) => [...currentLogs, ...auditLogs])
 
     if (result.clear) {
       setTerminalLines([])
