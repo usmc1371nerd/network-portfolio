@@ -496,7 +496,7 @@ export function processTerminalCommand(
         }
       }
       if (context.connectedTo !== 'pc') {
-        return { output: ['Access denied: pivot through PC-1 first'], context }
+        return { output: ['Policy deny: source segment blocked. Use PC-1 jump path.'], context }
       }
       return {
         output: [
