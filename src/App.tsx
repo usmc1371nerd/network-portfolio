@@ -116,6 +116,86 @@ function getDirectoryForPath(
   return cursor
 }
 
+function getAlwaysOnSuggestedCommands(options: {
+  helpEnabled: boolean
+  onboardingStep: TerminalContext['onboardingStep']
+  connectedTo: TerminalContext['connectedTo']
+  currentPath: string[]
+  pcLabels: string[]
+  lastPcLabel: string | null
+  hasServerConnection: boolean
+}): string[] {
+  const { helpEnabled, onboardingStep, connectedTo, currentPath, pcLabels, lastPcLabel, hasServerConnection } = options
+
+  if (!helpEnabled) {
+    return []
+  }
+
+  const firstPcLabel = pcLabels[0]?.toLowerCase()
+  const pingPeer = (lastPcLabel ?? pcLabels[0] ?? 'pc-1').toLowerCase()
+
+  if (pcLabels.length === 0) {
+    return ['help']
+  }
+
+  if (onboardingStep === 'connect-pc-1' && firstPcLabel) {
+    return [`connect ${firstPcLabel}`, 'help']
+  }
+
+  if (!hasServerConnection && firstPcLabel) {
+    return [`connect ${firstPcLabel}`, 'help']
+  }
+
+  if (onboardingStep === 'ssh-pc-1' && firstPcLabel) {
+    return [`ssh ${firstPcLabel}`, 'help']
+  }
+
+  if (connectedTo === null && firstPcLabel) {
+    return [`ssh ${firstPcLabel}`, 'help']
+  }
+
+  if (onboardingStep === 'ssh-server') {
+    return ['ssh server', `ssh ${firstPcLabel ?? 'pc-1'}`, 'help']
+  }
+
+  if (connectedTo === 'pc') {
+    return ['ssh server', 'ping server', 'help']
+  }
+
+  if (connectedTo === 'server') {
+    const currentDirectory = getDirectoryForPath(serverFileSystem as Record<string, unknown>, currentPath)
+
+    if (currentPath.length === 0) {
+      const directoryNames = Object.keys(serverFileSystem)
+      return ['help', 'ls', `ping ${pingPeer}`, ...directoryNames.map((directoryName) => `cd ${directoryName}`)]
+    }
+
+    if (!currentDirectory) {
+      return ['help', 'ls', 'cd ..', `ping ${pingPeer}`]
+    }
+
+    const fileNames = Object.entries(currentDirectory)
+      .filter(([, value]) => typeof value === 'string')
+      .map(([name]) => name)
+    const directoryNames = Object.entries(currentDirectory)
+      .filter(([, value]) => typeof value !== 'string')
+      .map(([name]) => name)
+
+    const suggestions = [
+      'help',
+      'ls',
+      'cd ..',
+      `ping ${pingPeer}`,
+      ...directoryNames.map((directoryName) => `cd ${directoryName}`),
+      ...fileNames.map((fileName) => `cat ${fileName}`),
+    ]
+
+    return suggestions
+  }
+
+  return ['help']
+}
+
 function App() {
   const navigate = useNavigate()
   const [isMobileDevice, setIsMobileDevice] = useState(false)
@@ -123,6 +203,7 @@ function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [packetLogs, setPacketLogs] = useState<string[]>([])
+  const [openFile, setOpenFile] = useState<{ path: string; content: string } | null>(null)
   const [terminalLines, setTerminalLines] = useState<string[]>(initialTerminalLines)
   const [terminalInput, setTerminalInput] = useState('')
   const [commandHistory, setCommandHistory] = useState<string[]>([])
@@ -134,6 +215,8 @@ function App() {
     connectedTo: null,
     connectedLabel: null,
     connectedIp: null,
+    lastPcLabel: null,
+    lastPcIp: null,
     currentPath: [],
     onboardingStep: 'drop-pc-1',
   })
@@ -275,29 +358,17 @@ function App() {
     [connectedNodeIds, helpEnabled, nodes, terminalContext.connectedLabel, terminalContext.onboardingStep],
   )
 
-  const suggestedCommand = useMemo(() => {
-    if (!helpEnabled) {
-      return null
-    }
-
-    if (terminalContext.onboardingStep === 'connect-pc-1') {
-      return 'connect pc-1'
-    }
-
-    if (terminalContext.onboardingStep === 'ssh-pc-1') {
-      return 'ssh pc-1'
-    }
-
-    if (terminalContext.onboardingStep === 'ssh-server') {
-      return 'ssh server'
-    }
-
-    if (terminalContext.onboardingStep === 'done' && terminalContext.connectedTo === 'server') {
-      return 'ls'
-    }
-
-    return null
-  }, [helpEnabled, terminalContext.connectedTo, terminalContext.onboardingStep])
+  const suggestedCommands = useMemo(() => {
+    return getAlwaysOnSuggestedCommands({
+      helpEnabled,
+      onboardingStep: terminalContext.onboardingStep,
+      connectedTo: terminalContext.connectedTo,
+      currentPath: terminalContext.currentPath,
+      pcLabels: Array.from(pcNodes.values()),
+      lastPcLabel: terminalContext.lastPcLabel,
+      hasServerConnection,
+    })
+  }, [hasServerConnection, helpEnabled, pcNodes, terminalContext.connectedTo, terminalContext.currentPath, terminalContext.lastPcLabel, terminalContext.onboardingStep])
 
   const connectNodesById = useCallback(
     (sourceId: string, targetId: string, shouldAnimateImmediately = true) => {
@@ -462,6 +533,10 @@ function App() {
       return
     }
 
+    if (result.openedFile) {
+      setOpenFile(result.openedFile)
+    }
+
     if (result.packetEvent) {
       const fromNodeId = ipToNodeId.get(result.packetEvent.fromIp)
       const toNodeId = ipToNodeId.get(result.packetEvent.toIp)
@@ -507,13 +582,13 @@ function App() {
     executeTerminalCommand(terminalInput)
   }, [executeTerminalCommand, terminalInput])
 
-  const handleSuggestedCommand = useCallback(() => {
-    if (!suggestedCommand) {
+  const handleRunSuggestedCommand = useCallback((command: string) => {
+    if (!command) {
       return
     }
 
-    executeTerminalCommand(suggestedCommand)
-  }, [executeTerminalCommand, suggestedCommand])
+    executeTerminalCommand(command)
+  }, [executeTerminalCommand])
 
   const handleTerminalInputChange = useCallback((value: string) => {
     setTerminalInput(value)
@@ -773,6 +848,10 @@ function App() {
     setHelpEnabled((current) => !current)
   }, [])
 
+  const handleCloseViewer = useCallback(() => {
+    setOpenFile(null)
+  }, [])
+
   useEffect(() => {
     const updateViewportMode = () => {
       const coarsePointer = window.matchMedia('(pointer: coarse)').matches
@@ -858,6 +937,22 @@ function App() {
         <TopBar onLaunchGuiMode={handleLaunchGuiMode} helpEnabled={helpEnabled} onToggleHelp={handleToggleHelp} />
         <div className="main-layout">
           {showCanvasGuide ? <div className="canvas-guide-popup">Drag a PC into the canvas to get started.</div> : null}
+          {openFile ? (
+            <aside className="content-viewer-panel">
+              <div className="content-viewer-header">
+                <div>
+                  <p className="content-viewer-eyebrow">Read Only</p>
+                  <h3>{openFile.path}</h3>
+                </div>
+                <button type="button" className="content-viewer-close" onClick={handleCloseViewer}>
+                  Close
+                </button>
+              </div>
+              <div className="content-viewer-body">
+                <pre>{openFile.content}</pre>
+              </div>
+            </aside>
+          ) : null}
           <DevicePanel />
           <NetworkCanvas
             nodes={decoratedNodes}
@@ -877,8 +972,8 @@ function App() {
             prompt={buildPrompt(terminalContext)}
             onInputChange={handleTerminalInputChange}
             onKeyDown={handleTerminalKeyDown}
-            suggestedCommand={suggestedCommand}
-            onRunSuggestedCommand={handleSuggestedCommand}
+            suggestedCommands={suggestedCommands}
+            onRunSuggestedCommand={handleRunSuggestedCommand}
           />
           <PacketLogPanel logs={packetLogs} />
         </div>

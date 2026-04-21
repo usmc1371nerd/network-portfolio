@@ -5,6 +5,8 @@ export type TerminalContext = {
   connectedTo: 'server' | 'pc' | null
   connectedLabel: string | null
   connectedIp: string | null
+  lastPcLabel: string | null
+  lastPcIp: string | null
   currentPath: string[]
   onboardingStep: 'drop-pc-1' | 'connect-pc-1' | 'ssh-pc-1' | 'ssh-server' | 'done'
 }
@@ -13,6 +15,10 @@ type TerminalResult = {
   output: string[]
   context: TerminalContext
   clear?: boolean
+  openedFile?: {
+    path: string
+    content: string
+  }
   packetEvent?: {
     fromIp: string
     toIp: string
@@ -156,11 +162,11 @@ export function processTerminalCommand(
   if (command === 'help') {
     const serverCmds = [
       'help',
-      'ping server',
-      'ssh server',
+      'ping <target>',
       'whoami',
       'ls',
       'cd <directory>',
+      'cd ..',
       'cat <file>',
       'clear',
     ]
@@ -327,6 +333,8 @@ export function processTerminalCommand(
           connectedTo: 'pc',
           connectedLabel: pcLabel,
           connectedIp: targetIp,
+          lastPcLabel: pcLabel,
+          lastPcIp: targetIp,
           currentPath: [],
           onboardingStep: isGuidedPc1Login ? 'ssh-server' : context.onboardingStep,
         },
@@ -361,6 +369,8 @@ export function processTerminalCommand(
         connectedTo: 'server',
         connectedLabel: runtime.serverLabel,
         connectedIp: runtime.serverIp,
+        lastPcLabel: context.connectedLabel,
+        lastPcIp: context.connectedIp,
         currentPath: [],
         onboardingStep: 'done',
       },
@@ -449,7 +459,14 @@ export function processTerminalCommand(
       return { output: [`cat: file not found: ${fileName}`], context }
     }
 
-    return { output: [file], context }
+    return {
+      output: [file],
+      context,
+      openedFile: {
+        path: [...context.currentPath, fileName].join('/'),
+        content: file,
+      },
+    }
   }
 
   return { output: invalidCommandOutput(), context }

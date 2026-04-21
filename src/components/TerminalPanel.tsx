@@ -6,8 +6,8 @@ type TerminalPanelProps = {
   prompt: string
   onInputChange: (value: string) => void
   onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement>) => void
-  suggestedCommand: string | null
-  onRunSuggestedCommand: () => void
+  suggestedCommands: string[]
+  onRunSuggestedCommand: (command: string) => void
 }
 
 export function TerminalPanel({
@@ -16,7 +16,7 @@ export function TerminalPanel({
   prompt,
   onInputChange,
   onKeyDown,
-  suggestedCommand,
+  suggestedCommands,
   onRunSuggestedCommand,
 }: TerminalPanelProps) {
   const outputRef = useRef<HTMLDivElement | null>(null)
@@ -37,12 +37,19 @@ export function TerminalPanel({
           </div>
         ))}
       </div>
-      {suggestedCommand ? (
+      {suggestedCommands.length > 0 ? (
         <div className="terminal-suggestion-row">
           <span className="terminal-suggestion-label">Suggested:</span>
-          <button type="button" className="terminal-suggestion-button" onClick={onRunSuggestedCommand}>
-            {suggestedCommand}
-          </button>
+          {suggestedCommands.map((command) => (
+            <button
+              key={command}
+              type="button"
+              className="terminal-suggestion-button"
+              onClick={() => onRunSuggestedCommand(command)}
+            >
+              {command}
+            </button>
+          ))}
         </div>
       ) : null}
       <label className="terminal-input-row" htmlFor="terminal-input">

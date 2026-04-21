@@ -4,32 +4,32 @@ const trainingItems = [
   {
     title: 'Google Cybersecurity Professional Certificate',
     description:
-      'Completed structured training covering security operations, risk management, network defense, incident response, and threat detection principles.',
-  },
-    {
-    title: 'Certified in Cybersecurity — (ISC)²',
-    description:
-      'Initially unsuccessful on my first attempt. I printed the result and posted it on the wall as a daily reminder to improve. Studied consistently for two months and passed. Failure is feedback, not a finish line.',
+      'Training in security operations, risk management, network defense, incident response, and threat detection.',
   },
   {
-    title: 'Full Stack Development Program — Bottega University',
+    title: 'Certified in Cybersecurity - (ISC)2',
     description:
-      'Completed an intensive development program covering React, Python, JavaScript, and database design. Provided the engineering foundation that supports current security-focused work.',
+      'Failed the first attempt, studied for two more months, and passed. Good reminder that failure is feedback.',
+  },
+  {
+    title: 'Full Stack Development Program - Bottega University',
+    description:
+      'Training in React, Python, JavaScript, and databases that still supports my security-focused work.',
   },
   {
     title: 'IriusRisk Threat Modeling Hackathon 2025',
     description:
-      'Led a small team in developing a STRIDE-based threat model for an autonomous vehicle system under time constraints. Focus areas included trust boundary identification, attack path mapping, and risk prioritization.',
+      'Led a small team building a STRIDE-based threat model for an autonomous vehicle system under time pressure.',
   },
   {
     title: 'IriusRisk Threat Modeling Hackathon 2026',
     description:
-      'Served as team lead and completed the threat model independently after team participation dropped off. Successfully delivered a complete model and received positive mentor feedback for structure, persistence, and analytical approach.',
+      'Took over solo after team participation dropped and still delivered a complete threat model with strong mentor feedback.',
   },
   {
     title: 'Diver OSINT CTF Challenge',
     description:
-      'Participated in a global OSINT challenge involving geolocation analysis, metadata extraction, and investigative pivoting techniques under time pressure.',
+      'OSINT challenge focused on geolocation, metadata, and fast investigative pivoting.',
   },
 ]
 
@@ -39,33 +39,28 @@ export function About() {
       <section className="about-section">
         <h1>About</h1>
         <p>
-          I work at the intersection of cybersecurity, network operations, and software delivery, with
-          a focus on practical problem solving and clear technical communication. My background includes
-          military Red Cell experience, technical support in regulated environments, and hands-on
-          development of tools used to test, analyze, and better understand how systems behave under
-          real-world conditions.
+          I work across cybersecurity, network operations, and software delivery with a focus on
+          practical problem solving. My background includes military Red Cell experience, technical
+          support in regulated environments, and building tools that help test and understand real systems.
         </p>
         <p>
-          I tend to approach technology with equal parts curiosity and skepticism. I like understanding
-          how things work, how they break, and how they can be improved. That mindset naturally led me
-          toward threat modeling, OSINT research, and security-focused development.
+          I like understanding how systems work, how they fail, and how they can be improved. That
+          led me toward threat modeling, OSINT, and security-focused development.
         </p>
         <p>
-          My transition into tech started in 2022 when I left a construction project management role
-          midway through a six-month Full Stack Developer program to pursue software and cybersecurity
-          full time. During that program I worked with React, Python, JavaScript, and relational
-          databases, building the technical foundation that now supports my security-focused work.
+          I moved into tech in 2022 after leaving construction project management during a six-month
+          full stack program to pursue software and cybersecurity full time. That work gave me the
+          engineering base I still build on.
         </p>
         <p>
-          Since then, I have continued developing skills in defensive security strategy, investigative
-          research methods, and system design. I prefer hands-on learning environments where theory is
-          tested against realistic scenarios.
+          Since then I have focused on defensive security, investigative research, and hands-on lab
+          work where theory gets tested against realistic scenarios.
         </p>
         <p>
-          This portfolio is a working lab as much as it is a resume. Some projects are polished, others
-          are experiments, but all of them reflect deliberate practice and continuous improvement.
+          This portfolio is a working lab as much as a resume. Some parts are polished, some are still
+          experiments, but all of it reflects deliberate practice and steady improvement.
         </p>
-        <p>Also, occasionally, questionable humor embedded in terminal output.</p>
+        <p>Also: occasional questionable terminal humor.</p>
       </section>
 
       <section className="about-section">
@@ -81,7 +76,7 @@ export function About() {
       </section>
 
       <section className="about-section">
-        <h2>Selected Training and Exercises</h2>
+        <h2>Training and Certificates</h2>
         <div className="training-grid">
           {trainingItems.map((item) => (
             <TrainingCard key={item.title} title={item.title} description={item.description} />
