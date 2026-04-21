@@ -172,15 +172,48 @@ function resolveTarget(rawTarget: string, runtime: TerminalRuntime): ResolvedTar
   return null
 }
 
-function handleNmap(rawTarget: string | undefined, context: TerminalContext): TerminalResult {
-  if (!rawTarget) {
-    return { output: ['usage: nmap <target>'], context }
+function handleNmap(rawArgs: string[], context: TerminalContext): TerminalResult {
+  if (rawArgs.length === 0) {
+    return {
+      output: [
+        'usage: nmap <target>',
+        'simulation note: minimal nmap mode enabled (no flags required)',
+        'try: nmap 10.0.0.0/24',
+      ],
+      context,
+    }
   }
+
+  const flags = rawArgs.filter((arg) => arg.startsWith('-'))
+  const targets = rawArgs.filter((arg) => !arg.startsWith('-'))
+  const unsupportedFlags = flags.filter((flag) => flag !== '-sn')
+
+  if (unsupportedFlags.length > 0) {
+    return {
+      output: [
+        `nmap: unsupported option(s) in this lab: ${unsupportedFlags.join(' ')}`,
+        'simulation note: use nmap <target> with no flags, or nmap -sn <target>',
+      ],
+      context,
+    }
+  }
+
+  if (targets.length === 0) {
+    return {
+      output: [
+        'usage: nmap <target>',
+        'simulation note: provide one target (example: nmap 10.0.0.0/24)',
+      ],
+      context,
+    }
+  }
+
+  const rawTarget = targets[0]
 
   if (rawTarget === '10.0.0.0/24') {
     return {
       output: [
-        'Starting Nmap 7.94 ( simulated scan )',
+        'Starting Nmap 7.94 ( simulated scan: minimal profile )',
         'Nmap scan report for 10.0.0.1',
         'Host is up (0.0021s latency).',
         '22/tcp open ssh',
@@ -203,6 +236,7 @@ function handleNmap(rawTarget: string | undefined, context: TerminalContext): Te
   if (rawTarget === SHADOW_IP || rawTarget.toLowerCase() === 'shadow-gateway') {
     return {
       output: [
+        'Starting Nmap 7.94 ( simulated scan: minimal profile )',
         `Nmap scan report for ${SHADOW_IP}`,
         'Host is up (0.0053s latency).',
         '22/tcp open ssh',
@@ -218,7 +252,11 @@ function handleNmap(rawTarget: string | undefined, context: TerminalContext): Te
   }
 
   return {
-    output: [`Nmap scan report for ${rawTarget}`, 'Host seems down or blocked in this simulation.'],
+    output: [
+      'Starting Nmap 7.94 ( simulated scan: minimal profile )',
+      `Nmap scan report for ${rawTarget}`,
+      'Host seems down or blocked in this simulation.',
+    ],
     context,
   }
 }
@@ -278,12 +316,25 @@ export function processTerminalCommand(
     const serverCmds = [
       'help',
       'ping <target>',
+      'nmap <target>',
       'whoami',
       'ls',
       'cd <directory>',
       'cd ..',
       'cat <file>',
       'clear',
+    ]
+    const pcCmds = [
+      'help',
+      'ping <target>',
+      'nmap <target>',
+      'ssh <target>',
+      'whoami',
+      'clear',
+      '',
+      'recon tip:',
+      'nmap 10.0.0.0/24',
+      'simulation note: no flags are required',
     ]
     const baseCmds = [
       'help',
@@ -301,7 +352,12 @@ export function processTerminalCommand(
     ]
 
     return {
-      output: context.connectedTo === 'server' ? serverCmds : baseCmds,
+      output:
+        context.connectedTo === 'server'
+          ? serverCmds
+          : context.connectedTo === 'pc'
+            ? pcCmds
+            : baseCmds,
       context,
     }
   }
@@ -319,7 +375,7 @@ export function processTerminalCommand(
   }
 
   if (command === 'nmap') {
-    return handleNmap(args[1], context)
+    return handleNmap(args.slice(1), context)
   }
 
   if (command === 'ping') {

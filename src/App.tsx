@@ -232,7 +232,7 @@ function getAlwaysOnSuggestedCommands(options: {
   }
 
   if (connectedTo === 'pc') {
-    return ['ssh server', 'ping server', 'help']
+    return ['ssh server', 'nmap 10.0.0.0/24', 'ping server', 'help']
   }
 
   if (connectedTo === 'server') {
@@ -721,8 +721,8 @@ function App() {
 
     const baseCommands =
       terminalContext.connectedTo === 'server' || terminalContext.connectedTo === 'shadow'
-        ? ['help', 'ping', 'ssh', 'whoami', 'ls', 'cd', 'cat', 'clear']
-        : ['help', 'ping', 'ssh', 'connect', 'whoami', 'clear']
+        ? ['help', 'ping', 'ssh', 'nmap', 'whoami', 'ls', 'cd', 'cat', 'clear']
+        : ['help', 'ping', 'ssh', 'connect', 'nmap', 'whoami', 'clear']
     const sectionAliases = new Map<string, string>([['certification', 'certifications']])
     const sectionKeywords =
       terminalContext.connectedTo === 'server' || terminalContext.connectedTo === 'shadow'
@@ -783,6 +783,29 @@ function App() {
         const prefix = longestCommonPrefix(candidates)
         if (prefix) {
           setTerminalInput(`ping ${prefix}`)
+        }
+      }
+      return
+    }
+
+    if (command === 'nmap') {
+      const nmapTargets = [
+        '10.0.0.0/24',
+        'server',
+        ...Array.from(pcNodes.values()).map((label) => label.toLowerCase()),
+        ...knownIps,
+        ...(terminalContext.shadowDiscovered ? ['10.0.13.37', 'shadow-gateway'] : []),
+      ]
+      const candidates = Array.from(new Set(nmapTargets)).filter((target) =>
+        target.startsWith(argPrefix.toLowerCase()),
+      )
+
+      if (candidates.length === 1) {
+        setTerminalInput(`nmap ${candidates[0]}`)
+      } else if (candidates.length > 1) {
+        const prefix = longestCommonPrefix(candidates)
+        if (prefix) {
+          setTerminalInput(`nmap ${prefix}`)
         }
       }
       return
@@ -898,7 +921,7 @@ function App() {
         }
       }
     }
-  }, [knownNodeIps, pcNodes, terminalContext.connectedTo, terminalContext.currentPath, terminalInput])
+  }, [knownNodeIps, pcNodes, terminalContext.connectedTo, terminalContext.currentPath, terminalContext.shadowDiscovered, terminalInput])
 
   const handleTerminalKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLInputElement>) => {

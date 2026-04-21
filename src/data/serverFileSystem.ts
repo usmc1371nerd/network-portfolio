@@ -60,6 +60,7 @@ export const serverFileSystem: FileSystemDirectory = {
       'Reach out for collaboration, mentorship, or entry-level network/security opportunities at usmcnerd1371@proton.me.',
   },
   resume: {
-    'resume.txt': 'Resume available on request in portfolio GUI mode.',
+    'resume.txt':
+      'Current resume site: https://resume.jpsportfolio.com/\nA downloadable resume file will be added soon.',
   },
 }
