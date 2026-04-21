@@ -18,7 +18,11 @@ const EXTRA_PAUSE_MS = 1000
 
 type Phase = 'typing' | 'pausing' | 'deleting' | 'waiting'
 
-export function TypewriterLoop() {
+type TypewriterLoopProps = {
+  className?: string
+}
+
+export function TypewriterLoop({ className = '' }: TypewriterLoopProps) {
   const [wordIndex, setWordIndex] = useState(0)
   const [displayed, setDisplayed] = useState('')
   const [phase, setPhase] = useState<Phase>('typing')
@@ -61,7 +65,7 @@ export function TypewriterLoop() {
   }, [displayed, phase, wordIndex])
 
   return (
-    <div className="typewriter-wrap" aria-live="polite" aria-label={`${displayed}`}>
+    <div className={`typewriter-wrap ${className}`.trim()} aria-live="polite" aria-label={`${displayed}`}>
       <span className="typewriter-text">{displayed}</span>
       <span className="typewriter-cursor" aria-hidden="true">▋</span>
     </div>

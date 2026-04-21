@@ -1,3 +1,5 @@
+import { TypewriterLoop } from './home/TypewriterLoop'
+
 type TopBarProps = {
   onLaunchGuiMode: () => void
   helpEnabled: boolean
@@ -7,7 +9,12 @@ type TopBarProps = {
 export function TopBar({ onLaunchGuiMode, helpEnabled, onToggleHelp }: TopBarProps) {
   return (
     <header className="top-bar">
-      <h1>JP&apos;s Network Lab</h1>
+      <div className="top-bar-brand">
+        <h1>JP&apos;s Network Lab</h1>
+      </div>
+      <div className="top-bar-center" aria-label="Identity">
+        <TypewriterLoop className="terminal-topbar-typewriter" />
+      </div>
       <div className="top-bar-actions">
         <button
           type="button"

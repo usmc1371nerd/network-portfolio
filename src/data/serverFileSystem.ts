@@ -5,6 +5,8 @@ export interface FileSystemDirectory {
 export type FileSystemNode = string | FileSystemDirectory
 
 export const serverFileSystem: FileSystemDirectory = {
+  '.secretfile':
+    'note: guest should not be able to access hidden network at 10.0.13.37, ssh user shadow, do not leave on root.',
   about: {
     'summary.txt':
       'I work across cybersecurity, network operations, and software delivery with a focus on practical problem solving. This portfolio is a working lab as much as a resume.',

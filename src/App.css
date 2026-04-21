@@ -10,9 +10,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
   padding: 0 1rem;
   border-bottom: 1px solid rgba(0, 255, 195, 0.3);
   background: #0f172a;
+}
+
+.top-bar-brand {
+  flex: 0 0 auto;
 }
 
 .top-bar h1 {
@@ -20,6 +25,13 @@
   font-size: 1rem;
   color: #00ffc3;
   letter-spacing: 0.04em;
+}
+
+.top-bar-center {
+  display: flex;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .top-bar button {
@@ -36,6 +48,21 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.terminal-topbar-typewriter {
+  min-height: auto;
+}
+
+.terminal-topbar-typewriter .typewriter-text {
+  font-size: clamp(0.95rem, 1.6vw, 1.2rem);
+  letter-spacing: 0.14em;
+  color: rgba(230, 237, 243, 0.94);
+}
+
+.terminal-topbar-typewriter .typewriter-cursor {
+  font-size: clamp(1rem, 1.7vw, 1.25rem);
 }
 
 .help-toggle-button {
@@ -447,6 +474,55 @@
   border: 1px solid #7c3aed;
 }
 
+.lab-root--shadow {
+  background: #16080d;
+}
+
+.lab-root--shadow .top-bar {
+  border-bottom-color: rgba(255, 83, 83, 0.35);
+  background: #1f0b10;
+}
+
+.lab-root--shadow .top-bar h1,
+.lab-root--shadow .terminal-topbar-typewriter .typewriter-text {
+  color: #ff8b8b;
+}
+
+.lab-root--shadow .help-toggle-on,
+.lab-root--shadow .top-bar button {
+  border-color: rgba(255, 96, 96, 0.75);
+  background: rgba(255, 64, 64, 0.16);
+}
+
+.lab-root--shadow .network-canvas {
+  background-color: #14080d;
+  background-image:
+    linear-gradient(to right, rgba(255, 70, 70, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 70, 70, 0.08) 1px, transparent 1px);
+}
+
+.lab-root--shadow .panel h3,
+.lab-root--shadow .prompt {
+  color: #ff9c9c;
+}
+
+.lab-root--shadow .terminal-suggestion-button {
+  border-color: rgba(255, 120, 120, 0.65);
+  background: rgba(255, 80, 80, 0.15);
+  color: #ffc0c0;
+}
+
+.lab-root--shadow .terminal-input-row input {
+  border-color: rgba(255, 96, 96, 0.45);
+  background: rgba(29, 10, 14, 0.9);
+}
+
+.lab-root--shadow .canvas-guide-popup,
+.lab-root--shadow .content-viewer-panel {
+  border-color: rgba(255, 100, 100, 0.55);
+  box-shadow: 0 0 18px rgba(255, 80, 80, 0.2);
+}
+
 .lab-root--mobile {
   grid-template-rows: 64px 1fr;
 }
@@ -528,10 +604,22 @@
   .top-bar {
     gap: 0.75rem;
     padding: 0.75rem 1rem;
+    flex-wrap: wrap;
   }
 
   .top-bar h1 {
     font-size: 0.92rem;
+  }
+
+  .top-bar-center {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .terminal-topbar-typewriter .typewriter-text {
+    font-size: 0.92rem;
+    letter-spacing: 0.08em;
   }
 
   .top-bar button {

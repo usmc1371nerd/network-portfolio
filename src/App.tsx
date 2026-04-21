@@ -22,6 +22,7 @@ import {
   buildPrompt,
   initialTerminalLines,
   processTerminalCommand,
+  shadowFileSystem,
   type TerminalContext,
 } from './utils/terminal'
 
@@ -166,7 +167,9 @@ function getAlwaysOnSuggestedCommands(options: {
     const currentDirectory = getDirectoryForPath(serverFileSystem as Record<string, unknown>, currentPath)
 
     if (currentPath.length === 0) {
-      const directoryNames = Object.keys(serverFileSystem)
+      const directoryNames = Object.entries(serverFileSystem)
+        .filter(([name, value]) => !name.startsWith('.') && typeof value !== 'string')
+        .map(([name]) => name)
       return ['help', 'ls', `ping ${pingPeer}`, ...directoryNames.map((directoryName) => `cd ${directoryName}`)]
     }
 
@@ -175,10 +178,10 @@ function getAlwaysOnSuggestedCommands(options: {
     }
 
     const fileNames = Object.entries(currentDirectory)
-      .filter(([, value]) => typeof value === 'string')
+      .filter(([name, value]) => typeof value === 'string' && !name.startsWith('.'))
       .map(([name]) => name)
     const directoryNames = Object.entries(currentDirectory)
-      .filter(([, value]) => typeof value !== 'string')
+      .filter(([name, value]) => typeof value !== 'string' && !name.startsWith('.'))
       .map(([name]) => name)
 
     const suggestions = [
@@ -191,6 +194,14 @@ function getAlwaysOnSuggestedCommands(options: {
     ]
 
     return suggestions
+  }
+
+  if (connectedTo === 'shadow') {
+    if (currentPath.length === 0) {
+      return ['help', 'ls', 'cd shadow', 'cd ops', 'cd archive', 'ping server', 'exit']
+    }
+
+    return ['help', 'ls', 'cd ..', 'ping server', 'exit']
   }
 
   return ['help']
@@ -209,7 +220,6 @@ function App() {
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [historyCursor, setHistoryCursor] = useState<number | null>(null)
   const [historyDraftInput, setHistoryDraftInput] = useState('')
-  const [showCanvasGuide, setShowCanvasGuide] = useState(false)
   const [terminalContext, setTerminalContext] = useState<TerminalContext>({
     connected: false,
     connectedTo: null,
@@ -219,6 +229,7 @@ function App() {
     lastPcIp: null,
     currentPath: [],
     onboardingStep: 'drop-pc-1',
+    shadowDiscovered: false,
   })
   const [nodeCount, setNodeCount] = useState(1)
   const [assignedPcIps, setAssignedPcIps] = useState<string[]>([])
@@ -369,6 +380,22 @@ function App() {
       hasServerConnection,
     })
   }, [hasServerConnection, helpEnabled, pcNodes, terminalContext.connectedTo, terminalContext.currentPath, terminalContext.lastPcLabel, terminalContext.onboardingStep])
+
+  const canvasGuideMessage = useMemo(() => {
+    if (!helpEnabled) {
+      return null
+    }
+
+    if (nodeCount === 1 && terminalContext.onboardingStep === 'drop-pc-1') {
+      return 'Drag a PC into the canvas to get started. See terminal for suggested commands.'
+    }
+
+    if (suggestedCommands.length === 0) {
+      return null
+    }
+
+    return `Next step: ${suggestedCommands[0]}. See terminal for suggested commands.`
+  }, [helpEnabled, nodeCount, suggestedCommands, terminalContext.onboardingStep])
 
   const connectNodesById = useCallback(
     (sourceId: string, targetId: string, shouldAnimateImmediately = true) => {
@@ -604,12 +631,22 @@ function App() {
       return
     }
 
+    const activeFileSystem =
+      terminalContext.connectedTo === 'shadow'
+        ? (shadowFileSystem as Record<string, unknown>)
+        : (serverFileSystem as Record<string, unknown>)
+
     const baseCommands =
-      terminalContext.connectedTo === 'server'
+      terminalContext.connectedTo === 'server' || terminalContext.connectedTo === 'shadow'
         ? ['help', 'ping', 'ssh', 'whoami', 'ls', 'cd', 'cat', 'clear']
         : ['help', 'ping', 'ssh', 'connect', 'whoami', 'clear']
     const sectionAliases = new Map<string, string>([['certification', 'certifications']])
-    const sectionKeywords = terminalContext.connectedTo === 'server' ? Object.keys(serverFileSystem) : []
+    const sectionKeywords =
+      terminalContext.connectedTo === 'server' || terminalContext.connectedTo === 'shadow'
+        ? Object.entries(activeFileSystem)
+            .filter(([name, value]) => !name.startsWith('.') && typeof value !== 'string')
+            .map(([name]) => name)
+        : []
 
     const knownIps = Array.from(knownNodeIps).sort()
     const parts = trimmed.split(/\s+/)
@@ -716,9 +753,9 @@ function App() {
       return
     }
 
-    if (command === 'cd' && terminalContext.connectedTo === 'server') {
+    if (command === 'cd' && (terminalContext.connectedTo === 'server' || terminalContext.connectedTo === 'shadow')) {
       const currentDir = getDirectoryForPath(
-        serverFileSystem as Record<string, unknown>,
+        activeFileSystem,
         terminalContext.currentPath,
       )
 
@@ -751,9 +788,9 @@ function App() {
       return
     }
 
-    if (command === 'cat' && terminalContext.connectedTo === 'server') {
+    if (command === 'cat' && (terminalContext.connectedTo === 'server' || terminalContext.connectedTo === 'shadow')) {
       const currentDir = getDirectoryForPath(
-        serverFileSystem as Record<string, unknown>,
+        activeFileSystem,
         terminalContext.currentPath,
       )
 
@@ -764,7 +801,10 @@ function App() {
       const fileCandidates = Object.entries(currentDir)
         .filter(([, value]) => typeof value === 'string')
         .map(([name]) => name)
-      const candidates = fileCandidates.filter((fileName) => fileName.startsWith(argPrefix))
+      const includeHidden = argPrefix.startsWith('.')
+      const candidates = fileCandidates.filter((fileName) =>
+        (includeHidden || !fileName.startsWith('.')) && fileName.startsWith(argPrefix),
+      )
 
       if (candidates.length === 1) {
         setTerminalInput(`cat ${candidates[0]}`)
@@ -878,28 +918,9 @@ function App() {
     [],
   )
 
-  useEffect(() => {
-    const shouldShowGuide = helpEnabled && terminalContext.onboardingStep === 'drop-pc-1' && nodeCount === 1
-
-    if (!shouldShowGuide) {
-      setShowCanvasGuide(false)
-      return
-    }
-
-    setShowCanvasGuide(true)
-
-    const timeoutId = window.setTimeout(() => {
-      setShowCanvasGuide(false)
-    }, 5000)
-
-    return () => {
-      window.clearTimeout(timeoutId)
-    }
-  }, [helpEnabled, nodeCount, terminalContext.onboardingStep])
-
   if (isMobileDevice && !allowMobileLab) {
     return (
-      <div className="lab-root lab-root--mobile">
+      <div className={`lab-root lab-root--mobile${terminalContext.connectedTo === 'shadow' ? ' lab-root--shadow' : ''}`}>
         <TopBar onLaunchGuiMode={handleLaunchGuiMode} helpEnabled={helpEnabled} onToggleHelp={handleToggleHelp} />
         <main className="mobile-lab-notice">
           <div className="mobile-lab-card">
@@ -933,10 +954,10 @@ function App() {
 
   return (
     <ReactFlowProvider>
-      <div className="lab-root">
+      <div className={`lab-root${terminalContext.connectedTo === 'shadow' ? ' lab-root--shadow' : ''}`}>
         <TopBar onLaunchGuiMode={handleLaunchGuiMode} helpEnabled={helpEnabled} onToggleHelp={handleToggleHelp} />
         <div className="main-layout">
-          {showCanvasGuide ? <div className="canvas-guide-popup">Drag a PC into the canvas to get started.</div> : null}
+          {canvasGuideMessage ? <div className="canvas-guide-popup">{canvasGuideMessage}</div> : null}
           {openFile ? (
             <aside className="content-viewer-panel">
               <div className="content-viewer-header">
