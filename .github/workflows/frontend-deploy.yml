@@ -82,18 +82,18 @@ jobs:
 
             if [ -n "$DB_HOST" ] && [ -n "$DB_USER" ] && [ -n "$DB_PASSWORD" ] && [ -n "$DB_NAME" ] && [ -n "$JWT_SECRET" ] && [ -n "$SETUP_SECRET" ]; then
               cat > server/.env <<EOF
-PORT=4000
-CLIENT_ORIGIN=https://jpsportfolio.com,https://www.jpsportfolio.com
-DB_HOST=$DB_HOST
-DB_PORT=${DB_PORT:-3306}
-DB_USER=$DB_USER
-DB_PASSWORD=$DB_PASSWORD
-DB_NAME=$DB_NAME
-JWT_SECRET=$JWT_SECRET
-JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-8h}
-SETUP_ENABLED=false
-SETUP_SECRET=$SETUP_SECRET
-EOF
+              PORT=4000
+              CLIENT_ORIGIN=https://jpsportfolio.com,https://www.jpsportfolio.com
+              DB_HOST=$DB_HOST
+              DB_PORT=${DB_PORT:-3306}
+              DB_USER=$DB_USER
+              DB_PASSWORD=$DB_PASSWORD
+              DB_NAME=$DB_NAME
+              JWT_SECRET=$JWT_SECRET
+              JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-8h}
+              SETUP_ENABLED=false
+              SETUP_SECRET=$SETUP_SECRET
+              EOF
               echo "server/.env written from GitHub Secrets"
             else
               echo "DB/JWT secrets not set; keeping existing server/.env"
