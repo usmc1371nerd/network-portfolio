@@ -170,6 +170,13 @@ button {
   opacity: 0.85;
 }
 
+.project-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
 /* Home page */
 .home-page {
   display: flex;

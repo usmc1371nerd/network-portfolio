@@ -13,21 +13,21 @@ export const serverFileSystem: FileSystemDirectory = {
   },
   projects: {
     'network-lab.txt':
-      'Interactive frontend simulation of network devices, packet flow events, and terminal-based exploration.\nLive: https://network-lab-e5f4.onrender.com/',
+      'Interactive frontend simulation of network devices, packet flow events, and terminal-based exploration.\nLive: https://network-lab-e5f4.onrender.com/\nGitHub: https://github.com/usmc1371nerd/network-portfolio',
     'cyberscout.txt':
       'Scenario-based OSINT training lab with guided exercises, controlled datasets, and structured investigative workflows.',
     'osint-toolkit.txt':
-      'Python pivot tool that speeds up open-source research across search engines, WHOIS, whitepages, and social platforms.',
+      'Python pivot tool that speeds up open-source research across search engines, WHOIS, whitepages, and social platforms.\nGitHub: https://github.com/usmc1371nerd/OSINT-Search/blob/main/app.py',
     'recon-utility.txt':
-      'Lightweight recon utilities for username discovery, social profile correlation, and digital footprint enumeration.',
+      'Lightweight recon utilities for username discovery, social profile correlation, and digital footprint enumeration.\nGitHub: https://github.com/usmc1371nerd/OSINT-Tool',
     'ted-encryption-device.txt':
       'Hardware-assisted key generation experiment using Raspberry Pi Pico and modified USB switch hardware.',
     'hl7-message-generator.txt':
-      'Python tool for generating HL7 messages for interface testing, malformed message checks, and troubleshooting.',
+      'Python tool for generating HL7 messages for interface testing, malformed message checks, and troubleshooting.\nGitHub: https://github.com/usmc1371nerd/HL7-generator',
     'linux-server-lab.txt':
       'Self-hosted Ubuntu lab for OSINT scenarios and CTF-style exercises using Docker and Tailscale.',
     'interactive-resume-pipeline.txt':
-      'Version-controlled resume site with quick content updates, Git-based tracking, and simple hosting deployment.\nLive: https://resume.jpsportfolio.com/',
+      'Version-controlled resume site with quick content updates, Git-based tracking, and simple hosting deployment.\nLive: https://resume.jpsportfolio.com/\nGitHub: https://github.com/usmc1371nerd/html-resume',
   },
   skills: {
     'core.txt':
