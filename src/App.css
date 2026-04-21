@@ -211,6 +211,11 @@
   line-height: 1.6;
 }
 
+.content-viewer-body pre a {
+  color: #7be4ff;
+  text-decoration: underline;
+}
+
 .device-panel {
   border-right: 1px solid rgba(124, 58, 237, 0.4);
   background: #0f172a;

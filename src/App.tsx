@@ -163,6 +163,32 @@ function getDirectoryForPath(
   return cursor
 }
 
+function renderViewerContent(content: string): Array<string | { text: string; href: string }> {
+  const urlPattern = /(https?:\/\/[^\s]+)/g
+  const segments: Array<string | { text: string; href: string }> = []
+  let lastIndex = 0
+  let match = urlPattern.exec(content)
+
+  while (match) {
+    const matchStart = match.index
+    const matchValue = match[0]
+
+    if (matchStart > lastIndex) {
+      segments.push(content.slice(lastIndex, matchStart))
+    }
+
+    segments.push({ text: matchValue, href: matchValue })
+    lastIndex = matchStart + matchValue.length
+    match = urlPattern.exec(content)
+  }
+
+  if (lastIndex < content.length) {
+    segments.push(content.slice(lastIndex))
+  }
+
+  return segments
+}
+
 function getAlwaysOnSuggestedCommands(options: {
   helpEnabled: boolean
   onboardingStep: TerminalContext['onboardingStep']
@@ -1027,7 +1053,22 @@ function App() {
                 </button>
               </div>
               <div className="content-viewer-body">
-                <pre>{openFile.content}</pre>
+                <pre>
+                  {renderViewerContent(openFile.content).map((segment, index) =>
+                    typeof segment === 'string' ? (
+                      <span key={`viewer-text-${index}`}>{segment}</span>
+                    ) : (
+                      <a
+                        key={`viewer-link-${index}`}
+                        href={segment.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {segment.text}
+                      </a>
+                    ),
+                  )}
+                </pre>
               </div>
             </aside>
           ) : null}

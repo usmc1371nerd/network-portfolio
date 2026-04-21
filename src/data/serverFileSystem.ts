@@ -13,7 +13,7 @@ export const serverFileSystem: FileSystemDirectory = {
   },
   projects: {
     'network-lab.txt':
-      'Interactive frontend simulation of network devices, packet flow events, and terminal-based exploration.',
+      'Interactive frontend simulation of network devices, packet flow events, and terminal-based exploration.\nLive: https://network-lab-e5f4.onrender.com/',
     'cyberscout.txt':
       'Scenario-based OSINT training lab with guided exercises, controlled datasets, and structured investigative workflows.',
     'osint-toolkit.txt':
@@ -27,7 +27,7 @@ export const serverFileSystem: FileSystemDirectory = {
     'linux-server-lab.txt':
       'Self-hosted Ubuntu lab for OSINT scenarios and CTF-style exercises using Docker and Tailscale.',
     'interactive-resume-pipeline.txt':
-      'Version-controlled resume site with quick content updates, Git-based tracking, and simple hosting deployment.',
+      'Version-controlled resume site with quick content updates, Git-based tracking, and simple hosting deployment.\nLive: https://resume.jpsportfolio.com/',
   },
   skills: {
     'core.txt':

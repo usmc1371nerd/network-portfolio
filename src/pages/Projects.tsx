@@ -2,6 +2,13 @@ import { ProjectCard } from '../components/ProjectCard'
 
 const projects = [
   {
+    title: 'Network Lab',
+    description:
+      'Interactive network simulation with terminal-driven workflows, hidden-segment discovery, and guided command progression.',
+    stack: ['React', 'TypeScript', 'React Flow', 'Vite'],
+    href: 'https://network-lab-e5f4.onrender.com/',
+  },
+  {
     title: 'CyberScout Labs (Private repository)',
     description:
       'Scenario-based OSINT training lab with guided exercises, controlled datasets, and structured investigative workflows.',
