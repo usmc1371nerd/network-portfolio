@@ -1,4 +1,3 @@
-import { ScrollingFooter } from '../components/home/ScrollingFooter.tsx'
 import { TypewriterLoop } from '../components/home/TypewriterLoop.tsx'
 
 export function Home() {
@@ -9,6 +8,16 @@ export function Home() {
           <h1 className="home-heading">WELCOME</h1>
           <p className="home-subtext">Thank you for visiting.</p>
           <p className="home-subtext">Enjoy exploring the lab.</p>
+          <div className="home-actions">
+            {/* <a
+              className="home-resume-button"
+              href={RESUME_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Grab Resume
+            </a> */}
+          </div>
         </section>
 
         <section className="home-typewriter" aria-label="Identity">
@@ -16,7 +25,7 @@ export function Home() {
         </section>
       </div>
 
-      <ScrollingFooter />
+      {/* <ScrollingFooter /> */}
     </div>
   )
 }

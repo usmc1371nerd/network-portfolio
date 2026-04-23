@@ -46,6 +46,25 @@
   font: inherit;
 }
 
+.top-bar-link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(124, 58, 237, 0.7);
+  background: rgba(124, 58, 237, 0.2);
+  color: #e6edf3;
+  padding: 0.45rem 0.8rem;
+  border-radius: 6px;
+  text-decoration: none;
+  font: inherit;
+}
+
+.top-bar-link-button--resume {
+  border-color: rgba(0, 255, 195, 0.45);
+  background: rgba(0, 255, 195, 0.1);
+  color: #00ffc3;
+}
+
 .top-bar-actions {
   display: flex;
   align-items: center;
@@ -98,6 +117,10 @@
 }
 
 .top-bar button:hover {
+  border-color: #00ffc3;
+}
+
+.top-bar-link-button:hover {
   border-color: #00ffc3;
 }
 
@@ -783,6 +806,10 @@
 .terminal-suggestion-button:hover {
   background: rgba(0, 255, 195, 0.15);
   border-color: rgba(0, 255, 195, 0.7);
+}
+
+.terminal-suggestion-link {
+  text-decoration: none;
 }
 
 .prompt {

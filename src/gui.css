@@ -1,3 +1,11 @@
+@font-face {
+  font-family: 'Codex';
+  src: url('./assets/codex-font/Codex-yYVPV.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
 .gui-shell,
 .admin-shell,
 .admin-login {
@@ -10,11 +18,25 @@
 .admin-header {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 20px;
   justify-content: space-between;
-  align-items: center;
-  padding: 12px 20px;
+  align-items: flex-start;
+  padding: 18px 24px;
   border-bottom: 1px solid #213054;
+}
+
+.gui-navbar-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 260px;
+}
+
+.gui-navbar-brand h1 {
+  margin: 0;
+  font-size: clamp(2rem, 3vw, 2.75rem);
+  letter-spacing: 0.06em;
 }
 
 .gui-navbar nav,
@@ -22,7 +44,61 @@
 .link-row {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
+  align-items: center;
+}
+
+.gui-navbar nav {
+  width: 100%;
+}
+
+.gui-navbar nav a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #7be4ff;
+  text-decoration: none;
+  font-family: 'Codex', 'Courier New', monospace;
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  padding: 0.7rem 1rem 0.62rem;
+  border: 1px solid rgba(123, 228, 255, 0.3);
+  border-radius: 999px;
+  background: rgba(123, 228, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(123, 228, 255, 0.03);
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.gui-navbar nav a:hover,
+.gui-navbar nav a.active {
+  color: #d9f8ff;
+  border-color: rgba(123, 228, 255, 0.65);
+  background: rgba(123, 228, 255, 0.12);
+  box-shadow: 0 0 16px rgba(123, 228, 255, 0.14);
+}
+
+.gui-resume-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 1rem 0.5rem;
+  border: 1px solid rgba(123, 228, 255, 0.45);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(123, 228, 255, 0.14), rgba(11, 16, 32, 0.92));
+  color: #7be4ff;
+  text-decoration: none;
+  font-family: 'Codex', 'Courier New', monospace;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: 0 0 18px rgba(123, 228, 255, 0.12);
+}
+
+.gui-resume-link:hover {
+  border-color: #7be4ff;
+  background: linear-gradient(135deg, rgba(123, 228, 255, 0.2), rgba(11, 16, 32, 0.96));
+  box-shadow: 0 0 24px rgba(123, 228, 255, 0.22);
 }
 
 .gui-content,
@@ -211,6 +287,32 @@ button {
   font-size: 1rem;
 }
 
+.home-actions {
+  margin-top: 22px;
+}
+
+.home-resume-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 180px;
+  padding: 0.85rem 1.2rem;
+  border: 1px solid rgba(123, 228, 255, 0.5);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(123, 228, 255, 0.16), rgba(11, 16, 32, 0.92));
+  color: #e6edf3;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  text-transform: uppercase;
+  font-family: 'Codex', 'Courier New', monospace;
+  box-shadow: 0 0 18px rgba(123, 228, 255, 0.12);
+}
+
+.home-resume-button:hover {
+  border-color: #7be4ff;
+  box-shadow: 0 0 24px rgba(123, 228, 255, 0.22);
+}
+
 /* Typewriter */
 .typewriter-wrap {
   display: flex;
@@ -256,4 +358,16 @@ button {
 @keyframes ticker-scroll {
   from { transform: translateX(0); }
   to   { transform: translateX(-33.333%); }
+}
+
+@media (max-width: 900px) {
+  .gui-navbar {
+    align-items: flex-start;
+  }
+
+  .gui-navbar nav {
+    width: 100%;
+    justify-content: flex-start;
+    border-radius: 18px;
+  }
 }

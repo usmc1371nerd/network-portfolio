@@ -48,6 +48,7 @@ type ResolvedTarget = {
 
 const SHADOW_IP = '10.0.13.37'
 const SHADOW_LABEL = 'SHADOW-GATEWAY'
+const RESUME_URL = 'https://resume.jpsportfolio.com/'
 const suspiciousCommandPatterns = [
   /\brm\b/,
   /\bdel\b/,
@@ -93,7 +94,7 @@ export const initialTerminalLines = [
   '--------------------------------',
 ]
 
-const beforeSessionCommands = ['help', 'ping', 'ssh', 'connect', 'nmap', 'whoami', 'clear']
+const beforeSessionCommands = ['help', 'ping', 'ssh', 'connect', 'nmap', 'whoami', 'resume', 'clear']
 
 function invalidCommandOutput(): string[] {
   return [
@@ -360,6 +361,7 @@ export function processTerminalCommand(
           'cd ..',
           'cat <file>',
           'ping server',
+          'resume',
           'exit',
           'clear',
         ],
@@ -372,6 +374,7 @@ export function processTerminalCommand(
       'ping <target>',
       'nmap <target>',
       'whoami',
+      'resume',
       'ls',
       'cd <directory>',
       'cd ..',
@@ -384,6 +387,7 @@ export function processTerminalCommand(
       'nmap <target>',
       'ssh <target>',
       'whoami',
+      'resume',
       'clear',
       '',
       'recon tip:',
@@ -396,6 +400,7 @@ export function processTerminalCommand(
       `ssh ${firstClientLabel}`,
       'ping server',
       'whoami',
+      'resume',
       'clear',
       '',
       'guided flow:',
@@ -426,6 +431,18 @@ export function processTerminalCommand(
       identity = 'intruder@10.0.13.37'
     }
     return { output: [identity], context }
+  }
+
+  if (command === 'resume') {
+    return {
+      output: [
+        'Resume ready:',
+        RESUME_URL,
+        '',
+        'Quick access is also available via the Grab Resume button.',
+      ],
+      context,
+    }
   }
 
   if (command === 'nmap') {
@@ -531,6 +548,16 @@ export function processTerminalCommand(
 
     if (source.ip === target.ip) {
       return { output: ['connect: source and target must be different devices'], context }
+    }
+
+    if (target.kind === 'pc') {
+      return {
+        output: [
+          `connect: ${source.label} cannot link directly to ${target.label}`,
+          'policy: devices can only connect to JP-SERVER',
+        ],
+        context,
+      }
     }
 
     if (target.kind === 'shadow') {

@@ -19,6 +19,7 @@ import { serverFileSystem } from './data/serverFileSystem'
 import { PCNode } from './components/PCNode'
 import { ServerNode } from './components/ServerNode'
 import { ConnectionLine } from './components/ConnectionLine'
+import { RESUME_URL } from './constants/resume'
 import {
   buildPrompt,
   initialTerminalLines,
@@ -103,6 +104,10 @@ function getLinkEstablishedLogs(sourceLabel: string, targetLabel: string): strin
     `[${getTimestamp(0)}] Link request accepted for ${sourceLabel} -> ${targetLabel}`,
     `[${getTimestamp(1)}] Layer 2 link established`,
   ]
+}
+
+function isServerOnlyLink(sourceId: string, targetId: string): boolean {
+  return sourceId === 'jp-server' || targetId === 'jp-server'
 }
 
 function getProvisioningLogs(deviceLabel: string, assignedIp: string, deviceTitle: string): string[] {
@@ -266,31 +271,31 @@ function getAlwaysOnSuggestedCommands(options: {
   const pingPeer = (lastPcLabel ?? pcLabels[0] ?? 'pc-1').toLowerCase()
 
   if (pcLabels.length === 0) {
-    return ['help']
+    return ['resume', 'help']
   }
 
   if (onboardingStep === 'connect-pc-1' && firstPcLabel) {
-    return [`connect ${firstPcLabel}`, 'help']
+    return ['resume', `connect ${firstPcLabel}`, 'help']
   }
 
   if (!hasServerConnection && firstPcLabel) {
-    return [`connect ${firstPcLabel}`, 'help']
+    return ['resume', `connect ${firstPcLabel}`, 'help']
   }
 
   if (onboardingStep === 'ssh-pc-1' && firstPcLabel) {
-    return [`ssh ${firstPcLabel}`, 'help']
+    return ['resume', `ssh ${firstPcLabel}`, 'help']
   }
 
   if (connectedTo === null && firstPcLabel) {
-    return [`ssh ${firstPcLabel}`, 'help']
+    return ['resume', `ssh ${firstPcLabel}`, 'help']
   }
 
   if (onboardingStep === 'ssh-server') {
-    return ['ssh server', `ssh ${firstPcLabel ?? 'pc-1'}`, 'help']
+    return ['resume', 'ssh server', `ssh ${firstPcLabel ?? 'pc-1'}`, 'help']
   }
 
   if (connectedTo === 'pc') {
-    return ['ssh server', 'nmap 10.0.0.0/24', 'ping server', 'help']
+    return ['resume', 'ssh server', 'nmap 10.0.0.0/24', 'ping server', 'help']
   }
 
   if (connectedTo === 'server') {
@@ -300,11 +305,11 @@ function getAlwaysOnSuggestedCommands(options: {
       const directoryNames = Object.entries(serverFileSystem)
         .filter(([name, value]) => !name.startsWith('.') && typeof value !== 'string')
         .map(([name]) => name)
-      return ['help', 'ls', `ping ${pingPeer}`, ...directoryNames.map((directoryName) => `cd ${directoryName}`)]
+      return ['resume', 'help', 'ls', `ping ${pingPeer}`, ...directoryNames.map((directoryName) => `cd ${directoryName}`)]
     }
 
     if (!currentDirectory) {
-      return ['help', 'ls', 'cd ..', `ping ${pingPeer}`]
+      return ['resume', 'help', 'ls', 'cd ..', `ping ${pingPeer}`]
     }
 
     const fileNames = Object.entries(currentDirectory)
@@ -315,6 +320,7 @@ function getAlwaysOnSuggestedCommands(options: {
       .map(([name]) => name)
 
     const suggestions = [
+      'resume',
       'help',
       'ls',
       'cd ..',
@@ -328,13 +334,13 @@ function getAlwaysOnSuggestedCommands(options: {
 
   if (connectedTo === 'shadow') {
     if (currentPath.length === 0) {
-      return ['help', 'ls', 'cd shadow', 'cd ops', 'cd archive', 'ping server', 'exit']
+      return ['resume', 'help', 'ls', 'cd shadow', 'cd ops', 'cd archive', 'ping server', 'exit']
     }
 
-    return ['help', 'ls', 'cd ..', 'ping server', 'exit']
+    return ['resume', 'help', 'ls', 'cd ..', 'ping server', 'exit']
   }
 
-  return ['help']
+  return ['resume', 'help']
 }
 
 function App() {
@@ -688,6 +694,18 @@ function App() {
         return false
       }
 
+      if (!isServerOnlyLink(sourceId, targetId)) {
+        setPacketLogs((currentLogs) => [
+          ...currentLogs,
+          `[${getTimestamp()}] policy deny: device-to-device links are disabled; route through JP-SERVER`,
+        ])
+        setTerminalLines((currentLines) => [
+          ...currentLines,
+          'policy: devices can only connect to JP-SERVER',
+        ])
+        return false
+      }
+
       const hasMatchingEdge = edges.some(
         (edge) =>
           (edge.source === sourceId && edge.target === targetId) ||
@@ -772,6 +790,7 @@ function App() {
       if (!connection.source || !connection.target) {
         return
       }
+
       connectNodesById(connection.source, connection.target)
     },
     [connectNodesById],
@@ -970,8 +989,8 @@ function App() {
 
     const baseCommands =
       terminalContext.connectedTo === 'server' || terminalContext.connectedTo === 'shadow'
-        ? ['help', 'ping', 'ssh', 'nmap', 'whoami', 'ls', 'cd', 'cat', 'clear']
-        : ['help', 'ping', 'ssh', 'connect', 'nmap', 'whoami', 'clear']
+        ? ['help', 'ping', 'ssh', 'nmap', 'whoami', 'resume', 'ls', 'cd', 'cat', 'clear']
+        : ['help', 'ping', 'ssh', 'connect', 'nmap', 'whoami', 'resume', 'clear']
     const sectionAliases = new Map<string, string>([['certification', 'certifications']])
     const sectionKeywords =
       terminalContext.connectedTo === 'server' || terminalContext.connectedTo === 'shadow'
@@ -1094,7 +1113,7 @@ function App() {
         return
       }
 
-      const targetCandidates = ['server', ...labels].filter((candidate) =>
+      const targetCandidates = ['server'].filter((candidate) =>
         candidate.startsWith(argPrefix.toLowerCase()),
       )
       if (targetCandidates.length === 1) {
@@ -1458,6 +1477,7 @@ function App() {
             inputValue={terminalInput}
             prompt={buildPrompt(terminalContext)}
             isGlitching={terminalGlitchActive}
+            resumeUrl={RESUME_URL}
             onInputChange={handleTerminalInputChange}
             onKeyDown={handleTerminalKeyDown}
             suggestedCommands={suggestedCommands}

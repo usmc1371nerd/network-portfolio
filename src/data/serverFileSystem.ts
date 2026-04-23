@@ -61,6 +61,6 @@ export const serverFileSystem: FileSystemDirectory = {
   },
   resume: {
     'resume.txt':
-      'Current resume site: https://resume.jpsportfolio.com/\nA downloadable resume file will be added soon.',
+      'Current resume site: https://resume.jpsportfolio.com/\nQuick access: use the Grab Resume button in the terminal or GUI.\nShortcut command: resume',
   },
 }

@@ -5,6 +5,7 @@ type TerminalPanelProps = {
   inputValue: string
   prompt: string
   isGlitching: boolean
+  resumeUrl: string
   onInputChange: (value: string) => void
   onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement>) => void
   suggestedCommands: string[]
@@ -16,6 +17,7 @@ export function TerminalPanel({
   inputValue,
   prompt,
   isGlitching,
+  resumeUrl,
   onInputChange,
   onKeyDown,
   suggestedCommands,
@@ -52,8 +54,28 @@ export function TerminalPanel({
               {command}
             </button>
           ))}
+          <a
+            className="terminal-suggestion-button terminal-suggestion-link"
+            href={resumeUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Grab Resume
+          </a>
         </div>
-      ) : null}
+      ) : (
+        <div className="terminal-suggestion-row">
+          <span className="terminal-suggestion-label">Quick Link:</span>
+          <a
+            className="terminal-suggestion-button terminal-suggestion-link"
+            href={resumeUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Grab Resume
+          </a>
+        </div>
+      )}
       <label className="terminal-input-row" htmlFor="terminal-input">
         <span className="prompt">{prompt}</span>
         <input
