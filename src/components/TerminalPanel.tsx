@@ -4,6 +4,7 @@ type TerminalPanelProps = {
   lines: string[]
   inputValue: string
   prompt: string
+  isGlitching: boolean
   onInputChange: (value: string) => void
   onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement>) => void
   suggestedCommands: string[]
@@ -14,6 +15,7 @@ export function TerminalPanel({
   lines,
   inputValue,
   prompt,
+  isGlitching,
   onInputChange,
   onKeyDown,
   suggestedCommands,
@@ -28,7 +30,7 @@ export function TerminalPanel({
   }, [lines])
 
   return (
-    <section className="panel terminal-panel">
+    <section className={`panel terminal-panel${isGlitching ? ' terminal-panel--glitch' : ''}`}>
       <h3>Terminal</h3>
       <div className="panel-body terminal-output" ref={outputRef}>
         {lines.map((line, index) => (

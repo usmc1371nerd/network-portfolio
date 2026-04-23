@@ -16,6 +16,7 @@ type TerminalResult = {
   output: string[]
   context: TerminalContext
   clear?: boolean
+  triggeredSecurityGlitch?: boolean
   openedFile?: {
     path: string
     content: string
@@ -47,6 +48,25 @@ type ResolvedTarget = {
 
 const SHADOW_IP = '10.0.13.37'
 const SHADOW_LABEL = 'SHADOW-GATEWAY'
+const suspiciousCommandPatterns = [
+  /\brm\b/,
+  /\bdel\b/,
+  /\bformat\b/,
+  /\bmkfs\b/,
+  /\bshutdown\b/,
+  /\breboot\b/,
+  /\bsudo\b/,
+  /\bpasswd\b/,
+  /\bnet\s+user\b/,
+  /\buseradd\b/,
+  /\bcurl\b/,
+  /\bwget\b/,
+  /\bnc\b/,
+  /\bnetcat\b/,
+  /\btelnet\b/,
+  /\bpowershell\b/,
+  /\breg\s+add\b/,
+]
 
 export const shadowFileSystem: Record<string, FileSystemNode> = {
   shadow: {
@@ -69,7 +89,7 @@ export const initialTerminalLines = [
   'environment: simulated network lab',
   'purpose: interactive portfolio',
   '',
-  'drag a PC onto the network to begin',
+  'drag a device onto the network to begin',
   '--------------------------------',
 ]
 
@@ -83,6 +103,30 @@ function invalidCommandOutput(): string[] {
     'just kidding... you are denied :)',
     '',
     'no zero cool allowed here',
+  ]
+}
+
+function isSuspiciousCommand(input: string): boolean {
+  const normalizedInput = input.trim().toLowerCase()
+
+  if (!normalizedInput) {
+    return false
+  }
+
+  return suspiciousCommandPatterns.some((pattern) => pattern.test(normalizedInput))
+}
+
+function buildGlitch404Output(input: string): string[] {
+  return [
+    'signal integrity warning...',
+    'render pipeline desynced',
+    '',
+    'system glitch detected',
+    `request blocked: ${input}`,
+    'ERROR 404 :: route to shady business not found',
+    'session mirrored to defender log',
+    '',
+    'try something less suspicious.',
   ]
 }
 
@@ -285,8 +329,18 @@ export function processTerminalCommand(
   fsRoot: Record<string, FileSystemNode>,
   runtime: TerminalRuntime,
 ): TerminalResult {
+  if (isSuspiciousCommand(input)) {
+    return {
+      output: buildGlitch404Output(input),
+      context,
+      triggeredSecurityGlitch: true,
+    }
+  }
+
   const args = input.split(/\s+/)
   const command = args[0].toLowerCase()
+  const firstClientLabel = Array.from(runtime.pcNodes.values())[0]?.toLowerCase() ?? 'pc-1'
+  const firstClientCanonicalLabel = Array.from(runtime.pcNodes.values())[0] ?? 'PC-1'
 
   if (!context.connected && !beforeSessionCommands.includes(command)) {
     return { output: invalidCommandOutput(), context }
@@ -338,16 +392,16 @@ export function processTerminalCommand(
     ]
     const baseCmds = [
       'help',
-      'connect pc-1',
-      'ssh pc-1',
+      `connect ${firstClientLabel}`,
+      `ssh ${firstClientLabel}`,
       'ping server',
       'whoami',
       'clear',
       '',
       'guided flow:',
-      '1) drag a PC into the canvas',
-      '2) connect pc-1',
-      '3) ssh pc-1',
+      '1) drag a device into the canvas',
+      `2) connect ${firstClientLabel}`,
+      `3) ssh ${firstClientLabel}`,
       '4) ssh server',
     ]
 
@@ -434,7 +488,7 @@ export function processTerminalCommand(
     const targetArg = args[2] ?? 'server'
 
     if (!sourceArg) {
-      return { output: ['usage: connect pc-1  or  connect shadow-gateway'], context }
+      return { output: [`usage: connect ${firstClientLabel}  or  connect shadow-gateway`], context }
     }
 
     if (sourceArg.toLowerCase() === 'shadow-gateway') {
@@ -507,7 +561,7 @@ export function processTerminalCommand(
       context: {
         ...context,
         onboardingStep:
-          source.label === 'PC-1' && target.kind === 'server'
+          source.label === firstClientCanonicalLabel && target.kind === 'server'
             ? 'ssh-pc-1'
             : context.onboardingStep,
       },
@@ -552,7 +606,7 @@ export function processTerminalCommand(
         }
       }
       if (context.connectedTo !== 'pc') {
-        return { output: ['Policy deny: source segment blocked. Use PC-1 jump path.'], context }
+        return { output: [`Policy deny: source segment blocked. Use ${firstClientCanonicalLabel} jump path.`], context }
       }
       return {
         output: [
@@ -587,7 +641,8 @@ export function processTerminalCommand(
 
     const pcLabel = runtime.pcNodes.get(targetIp)
     if (pcLabel) {
-      const isGuidedPc1Login = pcLabel === 'PC-1' && context.onboardingStep === 'ssh-pc-1'
+      const isGuidedPc1Login =
+        pcLabel === firstClientCanonicalLabel && context.onboardingStep === 'ssh-pc-1'
 
       return {
         output: isGuidedPc1Login
@@ -632,7 +687,7 @@ export function processTerminalCommand(
 
     if (context.connectedTo !== 'pc') {
       return {
-        output: ['Access denied: connect to PC-1 first'],
+        output: [`Access denied: connect to ${firstClientCanonicalLabel} first`],
         context,
       }
     }
@@ -660,7 +715,7 @@ export function processTerminalCommand(
         ...context,
         connected: true,
         connectedTo: 'pc',
-        connectedLabel: context.lastPcLabel ?? 'PC-1',
+        connectedLabel: context.lastPcLabel ?? firstClientCanonicalLabel,
         connectedIp: context.lastPcIp ?? '10.0.0.10',
         currentPath: [],
       },

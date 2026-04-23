@@ -23,7 +23,7 @@ type NetworkCanvasProps = {
   onNodesChange: (changes: NodeChange[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
   onConnect: (connection: Connection) => void
-  onAddPcNode: (position: { x: number; y: number }) => void
+  onAddDeviceNode: (deviceType: string, position: { x: number; y: number }) => void
 }
 
 export function NetworkCanvas({
@@ -34,7 +34,7 @@ export function NetworkCanvas({
   onNodesChange,
   onEdgesChange,
   onConnect,
-  onAddPcNode,
+  onAddDeviceNode,
 }: NetworkCanvasProps) {
   const { screenToFlowPosition } = useReactFlow()
 
@@ -48,14 +48,14 @@ export function NetworkCanvas({
       event.preventDefault()
 
       const deviceType = event.dataTransfer.getData('application/reactflow')
-      if (deviceType !== 'pc') {
+      if (!deviceType) {
         return
       }
 
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY })
-      onAddPcNode(position)
+      onAddDeviceNode(deviceType, position)
     },
-    [onAddPcNode, screenToFlowPosition],
+    [onAddDeviceNode, screenToFlowPosition],
   )
 
   return (

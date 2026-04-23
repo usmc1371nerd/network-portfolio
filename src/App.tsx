@@ -14,6 +14,7 @@ import { NetworkCanvas } from './components/NetworkCanvas'
 import { PacketLogPanel } from './components/PacketLogPanel'
 import { TerminalPanel } from './components/TerminalPanel'
 import { TopBar } from './components/TopBar'
+import { CameraPanel } from './components/CameraPanel'
 import { serverFileSystem } from './data/serverFileSystem'
 import { PCNode } from './components/PCNode'
 import { ServerNode } from './components/ServerNode'
@@ -29,10 +30,36 @@ import {
 export type LabNodeData = {
   label: string
   ip?: string
+  deviceKind?: 'pc' | 'laptop' | 'nas' | 'camera' | 'server'
+  deviceTitle?: string
+  deviceIcon?: string
   isConnected?: boolean
   isActiveSession?: boolean
   showGuideHint?: boolean
+  isRemovable?: boolean
+  onRemove?: () => void
 }
+
+type FilePanelState = {
+  type: 'file'
+  path: string
+  content: string
+}
+
+type CameraPanelSession = {
+  username: string
+  password: string
+  failedAttempts: number
+  authenticated: boolean
+  selectedFeedId: string
+}
+
+type ActivePanelState =
+  | FilePanelState
+  | {
+      type: 'camera'
+      nodeId: string
+    }
 
 const initialNodes: Node<LabNodeData>[] = [
   {
@@ -42,9 +69,19 @@ const initialNodes: Node<LabNodeData>[] = [
     data: {
       label: 'JP-SERVER',
       ip: '10.0.0.1',
+      deviceKind: 'server',
+      deviceTitle: 'CORE SERVER',
+      deviceIcon: 'SV',
     },
   },
 ]
+
+const deviceCatalog: Record<string, { labelPrefix: string; title: string; icon: string }> = {
+  pc: { labelPrefix: 'PC', title: 'WORKSTATION', icon: 'PC' },
+  laptop: { labelPrefix: 'LAPTOP', title: 'FIELD CLIENT', icon: 'LT' },
+  nas: { labelPrefix: 'NAS', title: 'BACKUP NODE', icon: 'NS' },
+  camera: { labelPrefix: 'CAM', title: 'IOT SENSOR', icon: 'IO' },
+}
 
 function getTimestamp(offsetSeconds = 0): string {
   const date = new Date(Date.now() + offsetSeconds * 1000)
@@ -52,7 +89,7 @@ function getTimestamp(offsetSeconds = 0): string {
 }
 
 function getConnectionLogs(pcLabel: string | null): string[] {
-  const sourceLabel = pcLabel ?? 'PC-1'
+  const sourceLabel = pcLabel ?? 'CLIENT-1'
   return [
     `[${getTimestamp(0)}] ARP request broadcast`,
     `[${getTimestamp(0)}] ARP reply from JP-SERVER`,
@@ -68,15 +105,32 @@ function getLinkEstablishedLogs(sourceLabel: string, targetLabel: string): strin
   ]
 }
 
+function getProvisioningLogs(deviceLabel: string, assignedIp: string, deviceTitle: string): string[] {
+  return [
+    `[${getTimestamp()}] DHCP request from ${deviceLabel}`,
+    `[${getTimestamp()}] DHCP assigned ${assignedIp}`,
+    `[${getTimestamp(1)}] ${deviceTitle} registered on lab segment`,
+  ]
+}
+
 function getCommandAuditLogs(options: {
   command: string
   prompt: string
   previousContext: TerminalContext
   nextContext: TerminalContext
   output: string[]
+  triggeredSecurityGlitch?: boolean
   openedFilePath?: string
 }): string[] {
-  const { command, prompt, previousContext, nextContext, output, openedFilePath } = options
+  const {
+    command,
+    prompt,
+    previousContext,
+    nextContext,
+    output,
+    triggeredSecurityGlitch,
+    openedFilePath,
+  } = options
   const logs = [`[${getTimestamp()}] cmd: ${prompt} ${command}`]
 
   if (previousContext.connectedTo !== nextContext.connectedTo) {
@@ -105,6 +159,10 @@ function getCommandAuditLogs(options: {
 
   if (openedFilePath) {
     logs.push(`[${getTimestamp()}] file: viewed ${openedFilePath}`)
+  }
+
+  if (triggeredSecurityGlitch) {
+    logs.push(`[${getTimestamp()}] sec: suspicious command trapped and replaced with 404 decoy`)
   }
 
   if (output.some((line) => line.toLowerCase().includes('permission denied') || line.toLowerCase().includes('access denied'))) {
@@ -286,7 +344,8 @@ function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [packetLogs, setPacketLogs] = useState<string[]>([])
-  const [openFile, setOpenFile] = useState<{ path: string; content: string } | null>(null)
+  const [activePanel, setActivePanel] = useState<ActivePanelState | null>(null)
+  const [cameraSessions, setCameraSessions] = useState<Record<string, CameraPanelSession>>({})
   const [terminalLines, setTerminalLines] = useState<string[]>(initialTerminalLines)
   const [terminalInput, setTerminalInput] = useState('')
   const [commandHistory, setCommandHistory] = useState<string[]>([])
@@ -306,12 +365,14 @@ function App() {
   const [nodeCount, setNodeCount] = useState(1)
   const [assignedPcIps, setAssignedPcIps] = useState<string[]>([])
   const [helpEnabled, setHelpEnabled] = useState(true)
+  const [terminalGlitchActive, setTerminalGlitchActive] = useState(false)
   const [packetAnimation, setPacketAnimation] = useState<{
     fromNodeId: string
     toNodeId: string
     pulse: number
   } | null>(null)
   const packetAnimationTimeoutRef = useRef<number | null>(null)
+  const glitchTimeoutRef = useRef<number | null>(null)
 
   const nodeTypes = useMemo(
     () => ({
@@ -350,6 +411,30 @@ function App() {
       label: serverNode?.data.label ?? 'JP-SERVER',
     }
   }, [nodes])
+
+  const activeCameraNode = useMemo(() => {
+    if (!activePanel || activePanel.type !== 'camera') {
+      return null
+    }
+
+    return nodes.find((node) => node.id === activePanel.nodeId && node.type === 'pcNode') ?? null
+  }, [activePanel, nodes])
+
+  const activeCameraSession = useMemo(() => {
+    if (!activeCameraNode) {
+      return null
+    }
+
+    return (
+      cameraSessions[activeCameraNode.id] ?? {
+        username: '',
+        password: '',
+        failedAttempts: 0,
+        authenticated: false,
+        selectedFeedId: 'lobby',
+      }
+    )
+  }, [activeCameraNode, cameraSessions])
 
   const hasServerConnection = useMemo(
     () =>
@@ -425,6 +510,132 @@ function App() {
     [edges],
   )
 
+  const openCameraPanel = useCallback((nodeId: string) => {
+    setCameraSessions((currentSessions) => ({
+      ...currentSessions,
+      [nodeId]: currentSessions[nodeId] ?? {
+        username: '',
+        password: '',
+        failedAttempts: 0,
+        authenticated: false,
+        selectedFeedId: 'lobby',
+      },
+    }))
+    setActivePanel({ type: 'camera', nodeId })
+  }, [])
+
+  const updateCameraSession = useCallback(
+    (nodeId: string, updater: (session: CameraPanelSession) => CameraPanelSession) => {
+      setCameraSessions((currentSessions) => {
+        const currentSession =
+          currentSessions[nodeId] ?? {
+            username: '',
+            password: '',
+            failedAttempts: 0,
+            authenticated: false,
+            selectedFeedId: 'lobby',
+          }
+
+        return {
+          ...currentSessions,
+          [nodeId]: updater(currentSession),
+        }
+      })
+    },
+    [],
+  )
+
+  const handleRemoveDeviceNode = useCallback((nodeId: string) => {
+    const nodeToRemove = nodes.find((node) => node.id === nodeId)
+
+    if (!nodeToRemove || nodeToRemove.type !== 'pcNode') {
+      return
+    }
+
+    const removedLabel = nodeToRemove.data.label
+    const removedIp = nodeToRemove.data.ip ?? null
+    const remainingClientCount = nodes.filter(
+      (node) => node.type === 'pcNode' && node.id !== nodeId,
+    ).length
+    const shouldDisconnectSession =
+      (terminalContext.connectedLabel !== null &&
+        terminalContext.connectedLabel.toLowerCase() === removedLabel.toLowerCase()) ||
+      (terminalContext.lastPcLabel !== null &&
+        terminalContext.lastPcLabel.toLowerCase() === removedLabel.toLowerCase())
+
+    setNodes((currentNodes) => currentNodes.filter((node) => node.id !== nodeId))
+    setEdges((currentEdges) =>
+      currentEdges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
+    )
+
+    if (removedIp) {
+      setAssignedPcIps((currentIps) => currentIps.filter((ip) => ip !== removedIp))
+    }
+
+    setCameraSessions((currentSessions) => {
+      if (!(nodeId in currentSessions)) {
+        return currentSessions
+      }
+
+      const nextSessions = { ...currentSessions }
+      delete nextSessions[nodeId]
+      return nextSessions
+    })
+
+    setActivePanel((currentPanel) =>
+      currentPanel?.type === 'camera' && currentPanel.nodeId === nodeId ? null : currentPanel,
+    )
+
+    if (
+      packetAnimation &&
+      (packetAnimation.fromNodeId === nodeId || packetAnimation.toNodeId === nodeId)
+    ) {
+      setPacketAnimation(null)
+    }
+
+    setPacketLogs((currentLogs) => [
+      ...currentLogs,
+      `[${getTimestamp()}] device removed: ${removedLabel}${removedIp ? ` (${removedIp})` : ''}`,
+      `[${getTimestamp()}] routes pruned for ${removedLabel}`,
+    ])
+
+    setTerminalLines((currentLines) => {
+      const nextLines = [
+        ...currentLines,
+        `system: ${removedLabel} removed from the network map`,
+      ]
+
+      if (shouldDisconnectSession) {
+        nextLines.push('session lost: active route disappeared')
+      }
+
+      return nextLines
+    })
+
+    if (shouldDisconnectSession) {
+      setTerminalContext((currentContext) => ({
+        ...currentContext,
+        connected: false,
+        connectedTo: null,
+        connectedLabel: null,
+        connectedIp: null,
+        lastPcLabel: null,
+        lastPcIp: null,
+        currentPath: [],
+        onboardingStep: remainingClientCount > 0 ? 'connect-pc-1' : 'drop-pc-1',
+      }))
+      setActivePanel(null)
+      return
+    }
+
+    if (remainingClientCount === 0) {
+      setTerminalContext((currentContext) => ({
+        ...currentContext,
+        onboardingStep: 'drop-pc-1',
+      }))
+    }
+  }, [nodes, packetAnimation, setEdges, setNodes, terminalContext.connectedLabel, terminalContext.lastPcLabel])
+
   const decoratedNodes = useMemo(
     () =>
       nodes.map((node) => ({
@@ -436,9 +647,11 @@ function App() {
             terminalContext.connectedLabel !== null &&
             node.data.label.toLowerCase() === terminalContext.connectedLabel.toLowerCase(),
           showGuideHint: helpEnabled && node.id === 'pc-1' && terminalContext.onboardingStep === 'connect-pc-1',
+          isRemovable: node.type === 'pcNode',
+          onRemove: node.type === 'pcNode' ? () => handleRemoveDeviceNode(node.id) : undefined,
         },
       })),
-    [connectedNodeIds, helpEnabled, nodes, terminalContext.connectedLabel, terminalContext.onboardingStep],
+    [connectedNodeIds, handleRemoveDeviceNode, helpEnabled, nodes, terminalContext.connectedLabel, terminalContext.onboardingStep],
   )
 
   const suggestedCommands = useMemo(() => {
@@ -494,6 +707,14 @@ function App() {
       const targetNode = nodes.find((node) => node.id === targetId)
       const sourcePc = sourceNode?.type === 'pcNode' ? sourceNode.data.label ?? null : null
       const targetPc = targetNode?.type === 'pcNode' ? targetNode.data.label ?? null : null
+      const sourceIsCamera = sourceNode?.data.deviceKind === 'camera'
+      const targetIsCamera = targetNode?.data.deviceKind === 'camera'
+      const cameraNodeId =
+        sourceIsCamera && targetId === 'jp-server'
+          ? sourceId
+          : targetIsCamera && sourceId === 'jp-server'
+            ? targetId
+            : null
 
       if (
         (sourceId === 'pc-1' && targetId === 'jp-server') ||
@@ -505,9 +726,14 @@ function App() {
       }
 
       setPacketLogs((currentLogs) => [...currentLogs, ...getConnectionLogs(sourcePc ?? targetPc)])
+
+      if (cameraNodeId) {
+        openCameraPanel(cameraNodeId)
+      }
+
       return true
     },
-    [edges, nodes, setEdges, triggerPacketAnimation],
+    [edges, nodes, openCameraPanel, setEdges, triggerPacketAnimation],
   )
 
   const decoratedEdges = useMemo(
@@ -551,10 +777,11 @@ function App() {
     [connectNodesById],
   )
 
-  const handleAddPcNode = useCallback(
-    (position: { x: number; y: number }) => {
+  const handleAddDeviceNode = useCallback(
+    (deviceType: string, position: { x: number; y: number }) => {
+      const deviceProfile = deviceCatalog[deviceType] ?? deviceCatalog.pc
       const nextId = `pc-${nodeCount}`
-      const nextLabel = `PC-${nodeCount}`
+      const nextLabel = `${deviceProfile.labelPrefix}-${nodeCount}`
       const assignedIp = allocateNextDhcpIp(assignedPcIps)
 
       if (!assignedIp) {
@@ -577,23 +804,26 @@ function App() {
           data: {
             label: nextLabel,
             ip: assignedIp,
+            deviceKind: (deviceType in deviceCatalog ? deviceType : 'pc') as LabNodeData['deviceKind'],
+            deviceTitle: deviceProfile.title,
+            deviceIcon: deviceProfile.icon,
           },
         },
       ])
       setPacketLogs((currentLogs) => [
         ...currentLogs,
-        `[${getTimestamp()}] DHCP request from ${nextLabel}`,
-        `[${getTimestamp()}] DHCP assigned ${assignedIp}`,
+        ...getProvisioningLogs(nextLabel, assignedIp, deviceProfile.title),
       ])
       setTerminalLines((currentLines) => [
         ...currentLines,
         'device detected:',
         `${nextLabel} assigned ${assignedIp}`,
+        `${deviceProfile.title} ready for uplink`,
         '',
         'next step:',
         `connect ${nextLabel.toLowerCase()}`,
       ])
-      if (nextLabel === 'PC-1' && helpEnabled) {
+      if (nextId === 'pc-1' && helpEnabled) {
         setTerminalContext((currentContext) => ({
           ...currentContext,
           onboardingStep: 'connect-pc-1',
@@ -613,6 +843,12 @@ function App() {
     setCommandHistory((currentHistory) => [...currentHistory, command])
     setHistoryCursor(null)
     setHistoryDraftInput('')
+    setTerminalGlitchActive(false)
+
+    if (glitchTimeoutRef.current) {
+      window.clearTimeout(glitchTimeoutRef.current)
+      glitchTimeoutRef.current = null
+    }
 
     const previousContext = terminalContext
     const prompt = buildPrompt(previousContext)
@@ -633,9 +869,18 @@ function App() {
       previousContext,
       nextContext: result.context,
       output: result.output,
+      triggeredSecurityGlitch: result.triggeredSecurityGlitch,
       openedFilePath: result.openedFile?.path,
     })
     setPacketLogs((currentLogs) => [...currentLogs, ...auditLogs])
+
+    if (result.triggeredSecurityGlitch) {
+      setTerminalGlitchActive(true)
+      glitchTimeoutRef.current = window.setTimeout(() => {
+        setTerminalGlitchActive(false)
+        glitchTimeoutRef.current = null
+      }, 1400)
+    }
 
     if (result.clear) {
       setTerminalLines([])
@@ -644,7 +889,11 @@ function App() {
     }
 
     if (result.openedFile) {
-      setOpenFile(result.openedFile)
+      setActivePanel({
+        type: 'file',
+        path: result.openedFile.path,
+        content: result.openedFile.content,
+      })
     }
 
     if (result.packetEvent) {
@@ -995,8 +1244,65 @@ function App() {
   }, [])
 
   const handleCloseViewer = useCallback(() => {
-    setOpenFile(null)
+    setActivePanel(null)
   }, [])
+
+  const handleCameraUsernameChange = useCallback((nodeId: string, value: string) => {
+    updateCameraSession(nodeId, (session) => ({
+      ...session,
+      username: value,
+    }))
+  }, [updateCameraSession])
+
+  const handleCameraPasswordChange = useCallback((nodeId: string, value: string) => {
+    updateCameraSession(nodeId, (session) => ({
+      ...session,
+      password: value,
+    }))
+  }, [updateCameraSession])
+
+  const handleCameraLogin = useCallback((nodeId: string) => {
+    const currentSession = cameraSessions[nodeId] ?? {
+      username: '',
+      password: '',
+      failedAttempts: 0,
+      authenticated: false,
+      selectedFeedId: 'lobby',
+    }
+    const isValidLogin =
+      currentSession.username.trim().toLowerCase() === 'admin' && currentSession.password === 'admin'
+
+    updateCameraSession(nodeId, (session) => {
+      return isValidLogin
+        ? {
+            ...session,
+            authenticated: true,
+            failedAttempts: 0,
+            password: '',
+          }
+        : {
+            ...session,
+            authenticated: false,
+            failedAttempts: session.failedAttempts + 1,
+          }
+    })
+
+    if (isValidLogin) {
+      const cameraNode = nodes.find((node) => node.id === nodeId)
+      setPacketLogs((currentLogs) => [
+        ...currentLogs,
+        `[${getTimestamp()}] auth: factory default credentials accepted on ${cameraNode?.data.label ?? nodeId}`,
+        `[${getTimestamp()}] warn: insecure device configuration detected (${cameraNode?.data.ip ?? 'ip unknown'})`,
+      ])
+    }
+  }, [cameraSessions, nodes, updateCameraSession])
+
+  const handleCameraFeedSelect = useCallback((nodeId: string, feedId: string) => {
+    updateCameraSession(nodeId, (session) => ({
+      ...session,
+      selectedFeedId: feedId,
+    }))
+  }, [updateCameraSession])
 
   useEffect(() => {
     const updateViewportMode = () => {
@@ -1015,10 +1321,29 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!activePanel || activePanel.type !== 'camera') {
+      return
+    }
+
+    const stillConnectedToServer = edges.some(
+      (edge) =>
+        (edge.source === activePanel.nodeId && edge.target === 'jp-server') ||
+        (edge.target === activePanel.nodeId && edge.source === 'jp-server'),
+    )
+
+    if (!stillConnectedToServer) {
+      setActivePanel(null)
+    }
+  }, [activePanel, edges])
+
   useEffect(
     () => () => {
       if (packetAnimationTimeoutRef.current) {
         window.clearTimeout(packetAnimationTimeoutRef.current)
+      }
+      if (glitchTimeoutRef.current) {
+        window.clearTimeout(glitchTimeoutRef.current)
       }
     },
     [],
@@ -1060,16 +1385,24 @@ function App() {
 
   return (
     <ReactFlowProvider>
-      <div className={`lab-root${terminalContext.connectedTo === 'shadow' ? ' lab-root--shadow' : ''}`}>
+      <div
+        className={`lab-root${terminalContext.connectedTo === 'shadow' ? ' lab-root--shadow' : ''}${terminalGlitchActive ? ' lab-root--breach' : ''}`}
+      >
+        {terminalGlitchActive ? (
+          <div className="system-failure-overlay" aria-hidden="true">
+            <div className="system-failure-code">404</div>
+            <div className="system-failure-copy">NETWORK INTEGRITY FAILURE</div>
+          </div>
+        ) : null}
         <TopBar onLaunchGuiMode={handleLaunchGuiMode} helpEnabled={helpEnabled} onToggleHelp={handleToggleHelp} />
         <div className="main-layout">
           {canvasGuideMessage ? <div className="canvas-guide-popup">{canvasGuideMessage}</div> : null}
-          {openFile ? (
+          {activePanel?.type === 'file' ? (
             <aside className="content-viewer-panel">
               <div className="content-viewer-header">
                 <div>
                   <p className="content-viewer-eyebrow">Read Only</p>
-                  <h3>{openFile.path}</h3>
+                  <h3>{activePanel.path}</h3>
                 </div>
                 <button type="button" className="content-viewer-close" onClick={handleCloseViewer}>
                   Close
@@ -1077,7 +1410,7 @@ function App() {
               </div>
               <div className="content-viewer-body">
                 <pre>
-                  {renderViewerContent(openFile.content).map((segment, index) =>
+                  {renderViewerContent(activePanel.content).map((segment, index) =>
                     typeof segment === 'string' ? (
                       <span key={`viewer-text-${index}`}>{segment}</span>
                     ) : (
@@ -1095,6 +1428,18 @@ function App() {
               </div>
             </aside>
           ) : null}
+          {activePanel?.type === 'camera' && activeCameraNode && activeCameraSession ? (
+            <CameraPanel
+              label={activeCameraNode.data.label}
+              ip={activeCameraNode.data.ip ?? 'IP pending'}
+              session={activeCameraSession}
+              onUsernameChange={(value) => handleCameraUsernameChange(activeCameraNode.id, value)}
+              onPasswordChange={(value) => handleCameraPasswordChange(activeCameraNode.id, value)}
+              onSubmitLogin={() => handleCameraLogin(activeCameraNode.id)}
+              onSelectFeed={(feedId) => handleCameraFeedSelect(activeCameraNode.id, feedId)}
+              onClose={handleCloseViewer}
+            />
+          ) : null}
           <DevicePanel />
           <NetworkCanvas
             nodes={decoratedNodes}
@@ -1104,7 +1449,7 @@ function App() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={handleConnect}
-            onAddPcNode={handleAddPcNode}
+            onAddDeviceNode={handleAddDeviceNode}
           />
         </div>
         <div className="bottom-panel">
@@ -1112,6 +1457,7 @@ function App() {
             lines={terminalLines}
             inputValue={terminalInput}
             prompt={buildPrompt(terminalContext)}
+            isGlitching={terminalGlitchActive}
             onInputChange={handleTerminalInputChange}
             onKeyDown={handleTerminalKeyDown}
             suggestedCommands={suggestedCommands}
