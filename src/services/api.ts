@@ -21,6 +21,12 @@ export type SetupStatus = {
   setupEnabled: boolean
 }
 
+export type ContactPayload = {
+  name: string
+  email: string
+  message: string
+}
+
 function normalizeApiBase(apiBase: string): string {
   const trimmed = apiBase.trim().replace(/\/+$/, '')
   if (!trimmed) {
@@ -190,5 +196,12 @@ export async function deletePost(token: string, id: number): Promise<{ success: 
   return request<{ success: boolean }>(`/posts/${id}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
+export async function sendContactMessage(payload: ContactPayload): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>('/contact', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   })
 }

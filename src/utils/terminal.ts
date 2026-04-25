@@ -48,7 +48,7 @@ type ResolvedTarget = {
 
 const SHADOW_IP = '10.0.13.37'
 const SHADOW_LABEL = 'SHADOW-GATEWAY'
-const RESUME_URL = 'https://resume.jpsportfolio.com/'
+const RESUME_URL = '/resume/James_Dumas_Resume.docx'
 const suspiciousCommandPatterns = [
   /\brm\b/,
   /\bdel\b/,
@@ -436,7 +436,7 @@ export function processTerminalCommand(
   if (command === 'resume') {
     return {
       output: [
-        'Resume ready:',
+        'Resume download ready:',
         RESUME_URL,
         '',
         'Quick access is also available via the Grab Resume button.',

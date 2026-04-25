@@ -3,25 +3,25 @@ const timeline = [
     title: 'Cybersecurity, and Engineering',
     period: 'Current',
     detail:
-      'Designs, builds, and tests practical security-focused systems, network labs, and full-stack applications. Work often centers on understanding system behavior, identifying attack surface considerations, and improving reliability through thoughtful engineering and clear documentation. Applies security engineering principles across development workflows, incorporating threat modeling awareness, automation where appropriate, and structured testing approaches that support resilient system design. Hands-on experience working across modern tooling while maintaining a curiosity-driven approach to solving technical problems and reducing unnecessary complexity.',
+      'Builds for research purposes, using hands-on labs, home server projects, and full-stack web apps to explore networking and security concepts. Focuses on understanding how systems behave, documenting findings clearly, and learning security engineering principles through practical experimentation. Research often centers on how ideas can be applied responsibly in real-world environments, with steady attention to reliability, usability, and reducing unnecessary complexity through better structure and repeatable workflows.',
   },
   {
     title: 'Military Experience',
     period: 'Service Background',
     detail:
-      'Developed strong operational discipline, mission-focused communication, and leadership under pressure. Experience operating in structured environments where preparation, accountability, and adaptability directly influenced mission outcomes. This background continues to shape a methodical approach to technical work, emphasizing situational awareness, risk consideration, and calm decision-making when systems or requirements change unexpectedly.',
+      'Progressed from a construction operations team leader in the Marines to a team leader in a Reconnaissance platoon in the Army National Guard. Served as an Operations NCO and lead instructor, coordinating 100 trainees, 5 staff, and outside agencies while managing planning, logistics, and execution under pressure. That background built operational discipline, accountability, situational awareness, and calm decision-making that still shape how I approach technical work and leadership today.',
   },
   {
     title: 'Project Management Progression',
     period: 'Leadership Development',
     detail:
-      'Progressed from entry-level project coordination into regional-level construction management responsibilities, overseeing multi-phase projects, timelines, budgets, and cross-functional teams. Experience includes coordinating stakeholders across technical and non-technical environments, managing competing priorities, and maintaining alignment between strategic goals and operational execution. This foundation supports structured planning, risk awareness, and the ability to translate complex technical efforts into clear progress indicators for leadership.',
+      'Progressed from project coordination into regional construction management, overseeing more than 20 projects at a time, coordinating 30 subcontractors, and managing $3M+ in building work. Responsibilities included scheduling, budgets, logistics, stakeholder coordination, and keeping multi-phase work aligned across teams. That experience strengthened structured planning, cross-functional communication, risk awareness, and the ability to keep complex efforts moving while balancing deadlines, resources, and changing field conditions.',
   },
   {
     title: 'Skills Progression',
     period: 'Ongoing',
     detail:
-      'Expanded from infrastructure fundamentals into full-stack development, practical automation, and both defensive and offensive security concepts. Continuously building experience in threat modeling approaches, OSINT research workflows, system design thinking, and identifying areas where automation can improve reliability or reduce manual overhead. Focus remains on developing adaptable technical judgment and a security engineering mindset that balances curiosity with responsibility.',
+      'Started in a full stack development program, then expanded into networking, cybersecurity, and OSINT through hands-on labs, practical projects, and steady self-directed learning. Long-term goals include completing a bachelor\'s in intelligence with a cyber focus, gaining more experience in physical and network pentesting, and earning certifications such as CompTIA Security+ and PenTest+.',
   },
 ]
 

@@ -1,5 +1,5 @@
 import { TypewriterLoop } from './home/TypewriterLoop'
-import { RESUME_URL } from '../constants/resume'
+import { RESUME_DOWNLOAD_NAME, RESUME_URL } from '../constants/resume'
 
 type TopBarProps = {
   onLaunchGuiMode: () => void
@@ -20,8 +20,7 @@ export function TopBar({ onLaunchGuiMode, helpEnabled, onToggleHelp }: TopBarPro
         <a
           className="top-bar-link-button top-bar-link-button--resume"
           href={RESUME_URL}
-          target="_blank"
-          rel="noopener noreferrer"
+          download={RESUME_DOWNLOAD_NAME}
         >
           Grab Resume
         </a>

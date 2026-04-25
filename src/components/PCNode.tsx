@@ -49,6 +49,18 @@ export function PCNode({ data }: NodeProps<LabNodeData>) {
       <div className="node-subtitle">
         {data.isActiveSession ? 'ACTIVE SESSION' : `${data.deviceTitle ?? 'CLIENT'}${data.ip ? ` - ${data.ip}` : ' - IP pending'}`}
       </div>
+      {data.showCameraShortcut && data.onOpenCameraPanel ? (
+        <button
+          type="button"
+          className="node-camera-shortcut"
+          onClick={(event) => {
+            event.stopPropagation()
+            data.onOpenCameraPanel?.()
+          }}
+        >
+          localhost://8080
+        </button>
+      ) : null}
       <Handle type="source" position={Position.Right} />
       {hintVisible ? (
         <div className={`node-guide-hint${hintLeaving ? ' is-leaving' : ''}`}>

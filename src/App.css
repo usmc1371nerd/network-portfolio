@@ -697,6 +697,24 @@
   font-size: 0.49rem;
 }
 
+.node-camera-shortcut {
+  margin-top: 0.32rem;
+  border: none;
+  background: none;
+  color: #7be4ff;
+  padding: 0;
+  font: inherit;
+  font-size: 0.46rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.12rem;
+}
+
+.node-camera-shortcut:hover {
+  color: #d9f8ff;
+}
+
 .bottom-panel {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import { authRouter } from './routes/auth.js'
+// import { contactRouter } from './routes/contact.js'
 import { postsRouter } from './routes/posts.js'
 import { db } from './db/connection.js'
 import { loadEnv } from './config/loadEnv.js'
@@ -88,6 +89,8 @@ app.get('/api/debug/db-config', async (req, res) => {
 })
 
 app.use('/api', authRouter)
+// SMTP contact route kept in codebase but disabled for now.
+// app.use('/api', contactRouter)
 app.use('/api', postsRouter)
 
 app.use((error, _req, res, _next) => {

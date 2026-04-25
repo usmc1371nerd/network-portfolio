@@ -6,8 +6,10 @@ export function Home() {
       <div className="home-center">
         <section className="home-welcome">
           <h1 className="home-heading">WELCOME</h1>
-          <p className="home-subtext">Thank you for visiting.</p>
-          <p className="home-subtext">Enjoy exploring the lab.</p>
+          <p className="home-subtext">
+            I help teams solve complex technical issues under pressure with minimal downtime by
+            bringing structure, clarity, and decisive action.
+          </p>
           <div className="home-actions">
             {/* <a
               className="home-resume-button"

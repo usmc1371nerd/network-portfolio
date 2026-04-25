@@ -19,7 +19,7 @@ import { serverFileSystem } from './data/serverFileSystem'
 import { PCNode } from './components/PCNode'
 import { ServerNode } from './components/ServerNode'
 import { ConnectionLine } from './components/ConnectionLine'
-import { RESUME_URL } from './constants/resume'
+import { RESUME_DOWNLOAD_NAME, RESUME_URL } from './constants/resume'
 import {
   buildPrompt,
   initialTerminalLines,
@@ -39,6 +39,8 @@ export type LabNodeData = {
   showGuideHint?: boolean
   isRemovable?: boolean
   onRemove?: () => void
+  showCameraShortcut?: boolean
+  onOpenCameraPanel?: () => void
 }
 
 type FilePanelState = {
@@ -655,9 +657,18 @@ function App() {
           showGuideHint: helpEnabled && node.id === 'pc-1' && terminalContext.onboardingStep === 'connect-pc-1',
           isRemovable: node.type === 'pcNode',
           onRemove: node.type === 'pcNode' ? () => handleRemoveDeviceNode(node.id) : undefined,
+          showCameraShortcut:
+            node.type === 'pcNode' &&
+            node.data.deviceKind === 'camera' &&
+            connectedNodeIds.has(node.id) &&
+            !(activePanel?.type === 'camera' && activePanel.nodeId === node.id),
+          onOpenCameraPanel:
+            node.type === 'pcNode' && node.data.deviceKind === 'camera'
+              ? () => openCameraPanel(node.id)
+              : undefined,
         },
       })),
-    [connectedNodeIds, handleRemoveDeviceNode, helpEnabled, nodes, terminalContext.connectedLabel, terminalContext.onboardingStep],
+    [activePanel, connectedNodeIds, handleRemoveDeviceNode, helpEnabled, nodes, openCameraPanel, terminalContext.connectedLabel, terminalContext.onboardingStep],
   )
 
   const suggestedCommands = useMemo(() => {
@@ -694,6 +705,11 @@ function App() {
         return false
       }
 
+      const sourceNode = nodes.find((node) => node.id === sourceId)
+      const targetNode = nodes.find((node) => node.id === targetId)
+      const sourceIsCamera = sourceNode?.data.deviceKind === 'camera'
+      const targetIsCamera = targetNode?.data.deviceKind === 'camera'
+
       if (!isServerOnlyLink(sourceId, targetId)) {
         setPacketLogs((currentLogs) => [
           ...currentLogs,
@@ -721,12 +737,8 @@ function App() {
         addEdge({ id: newEdgeId, source: sourceId, target: targetId, type: 'connectionLine', animated: true }, currentEdges),
       )
 
-      const sourceNode = nodes.find((node) => node.id === sourceId)
-      const targetNode = nodes.find((node) => node.id === targetId)
       const sourcePc = sourceNode?.type === 'pcNode' ? sourceNode.data.label ?? null : null
       const targetPc = targetNode?.type === 'pcNode' ? targetNode.data.label ?? null : null
-      const sourceIsCamera = sourceNode?.data.deviceKind === 'camera'
-      const targetIsCamera = targetNode?.data.deviceKind === 'camera'
       const cameraNodeId =
         sourceIsCamera && targetId === 'jp-server'
           ? sourceId
@@ -1478,6 +1490,7 @@ function App() {
             prompt={buildPrompt(terminalContext)}
             isGlitching={terminalGlitchActive}
             resumeUrl={RESUME_URL}
+            resumeDownloadName={RESUME_DOWNLOAD_NAME}
             onInputChange={handleTerminalInputChange}
             onKeyDown={handleTerminalKeyDown}
             suggestedCommands={suggestedCommands}
