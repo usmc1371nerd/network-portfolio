@@ -11,7 +11,7 @@ export function Navbar() {
       <nav>
         <NavLink to="/">Terminal</NavLink>
         <NavLink to="/gui">Home</NavLink>
-        <NavLink to="/gui/about">About</NavLink>
+        <NavLink to="/gui/about">whoami</NavLink>
         <NavLink to="/gui/projects">Projects</NavLink>
         <NavLink to="/gui/experience">Experience</NavLink>
         {/* <NavLink to="/gui/blog">Blog</NavLink> */}

@@ -37,11 +37,26 @@ export function About() {
   return (
     <div className="about-page">
       <section className="about-section">
-        <h1>About</h1>
+        <h1>whoami</h1>
+      </section>
+
+      <section className="about-section">
+        <h2>Skills Summary</h2>
+        <ul className="skills-list">
+          <li>Threat modeling and attack surface analysis</li>
+          <li>OSINT research and investigative workflows</li>
+          <li>Network analysis and troubleshooting</li>
+          <li>React, TypeScript, Node.js, Python</li>
+          <li>Technical documentation and knowledge transfer</li>
+          <li>Secure system design fundamentals</li>
+        </ul>
+      </section>
+
+      <section className="about-section">
+        <h2>Background</h2>
         <p>
-          I work across cybersecurity, network operations, and software delivery with a focus on
-          practical problem solving. My background includes military Red Cell experience, technical
-          support in regulated environments, and building tools that help test and understand real systems.
+          I moved from military service and construction project management into tech, bringing an
+          adaptable mindset, calm execution under pressure, and a habit of learning fast when the mission changes.
         </p>
         <p>
           I like understanding how systems work, how they fail, and how they can be improved. That
@@ -61,18 +76,6 @@ export function About() {
           experiments, but all of it reflects deliberate practice and steady improvement.
         </p>
         <p>Also: occasional questionable terminal humor.</p>
-      </section>
-
-      <section className="about-section">
-        <h2>Skills Summary</h2>
-        <ul className="skills-list">
-          <li>Threat modeling and attack surface analysis</li>
-          <li>OSINT research and investigative workflows</li>
-          <li>Network analysis and troubleshooting</li>
-          <li>React, TypeScript, Node.js, Python</li>
-          <li>Technical documentation and knowledge transfer</li>
-          <li>Secure system design fundamentals</li>
-        </ul>
       </section>
 
       <section className="about-section">
