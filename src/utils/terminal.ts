@@ -48,7 +48,7 @@ type ResolvedTarget = {
 
 const SHADOW_IP = '10.0.13.37'
 const SHADOW_LABEL = 'SHADOW-GATEWAY'
-const RESUME_URL = '/resume/James_Dumas_Resume.docx'
+const RESUME_URL = '/resume/JP_Dumas_Final_Resume.docx'
 const suspiciousCommandPatterns = [
   /\brm\b/,
   /\bdel\b/,

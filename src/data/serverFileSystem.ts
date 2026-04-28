@@ -61,6 +61,6 @@ export const serverFileSystem: FileSystemDirectory = {
   },
   resume: {
     'resume.txt':
-      'Current resume download: /resume/James_Dumas_Resume.docx\nQuick access: use the Grab Resume button in the terminal or GUI.\nShortcut command: resume',
+      'Current resume download: /resume/JP_Dumas_Final_Resume.docx\nQuick access: use the Grab Resume button in the terminal or GUI.\nShortcut command: resume',
   },
 }
