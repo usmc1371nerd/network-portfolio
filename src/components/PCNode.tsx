@@ -5,28 +5,19 @@ import type { LabNodeData } from '../App'
 export function PCNode({ data }: NodeProps<LabNodeData>) {
   const nodeClassName = `lab-node pc-node${data.deviceKind ? ` pc-node--${data.deviceKind}` : ''}${data.isConnected ? ' is-connected' : ''}${data.isActiveSession ? ' is-active-session' : ''}`
   const [hintVisible, setHintVisible] = useState(Boolean(data.showGuideHint))
-  const [hintLeaving, setHintLeaving] = useState(false)
+
+  if (data.showGuideHint && !hintVisible) {
+    setHintVisible(true)
+  }
 
   useEffect(() => {
-    let timeoutId: number | undefined
-
     if (data.showGuideHint) {
-      setHintVisible(true)
-      setHintLeaving(false)
-    } else if (hintVisible) {
-      setHintLeaving(true)
-      timeoutId = window.setTimeout(() => {
-        setHintVisible(false)
-        setHintLeaving(false)
-      }, 350)
+      return
     }
 
-    return () => {
-      if (timeoutId) {
-        window.clearTimeout(timeoutId)
-      }
-    }
-  }, [data.showGuideHint, hintVisible])
+    const timeoutId = window.setTimeout(() => setHintVisible(false), 350)
+    return () => window.clearTimeout(timeoutId)
+  }, [data.showGuideHint])
 
   return (
     <div className={nodeClassName}>
@@ -63,7 +54,7 @@ export function PCNode({ data }: NodeProps<LabNodeData>) {
       ) : null}
       <Handle type="source" position={Position.Right} />
       {hintVisible ? (
-        <div className={`node-guide-hint${hintLeaving ? ' is-leaving' : ''}`}>
+        <div className={`node-guide-hint${!data.showGuideHint ? ' is-leaving' : ''}`}>
           Type <strong>{`connect ${data.label.toLowerCase()}`}</strong> in the terminal to continue.
         </div>
       ) : null}

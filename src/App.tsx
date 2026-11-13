@@ -1352,22 +1352,6 @@ function App() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!activePanel || activePanel.type !== 'camera') {
-      return
-    }
-
-    const stillConnectedToServer = edges.some(
-      (edge) =>
-        (edge.source === activePanel.nodeId && edge.target === 'jp-server') ||
-        (edge.target === activePanel.nodeId && edge.source === 'jp-server'),
-    )
-
-    if (!stillConnectedToServer) {
-      setActivePanel(null)
-    }
-  }, [activePanel, edges])
-
   useEffect(
     () => () => {
       if (packetAnimationTimeoutRef.current) {
@@ -1379,6 +1363,17 @@ function App() {
     },
     [],
   )
+
+  if (
+    activePanel?.type === 'camera' &&
+    !edges.some(
+      (edge) =>
+        (edge.source === activePanel.nodeId && edge.target === 'jp-server') ||
+        (edge.target === activePanel.nodeId && edge.source === 'jp-server'),
+    )
+  ) {
+    setActivePanel(null)
+  }
 
   if (isMobileDevice && !allowMobileLab) {
     return (

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Portfolio project: Designing a hierarchical home-lab network with core, distribution, and access layers for better security and control.">
+<title>Securing My Home Lab | Hierarchical Network Design</title>
+<style>
+:root{color-scheme:dark;--bg:#07111d;--panel:#101f30;--panel2:#0c1827;--ink:#ecf5fc;--muted:#a4b9cb;--teal:#36e2cd;--blue:#78a9ff;--line:#294258;--gold:#f8c474;--red:#ff8f8f}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(ellipse at 70% -15%,#163950 0,transparent 52%),var(--bg);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);line-height:1.55}.page{max-width:1140px;margin:32px auto;padding:0 28px}.poster{border:1px solid #345369;border-radius:22px;overflow:hidden;background:linear-gradient(145deg,rgba(17,37,55,.97),rgba(7,17,29,.98));box-shadow:0 24px 85px #0007}.masthead{padding:45px 52px 34px;border-bottom:1px solid var(--line);position:relative;overflow:hidden}.masthead:after{content:"";position:absolute;right:-65px;top:-85px;width:290px;height:290px;border:1px solid #36e2cd30;border-radius:50%;box-shadow:0 0 0 55px #36e2cd08,0 0 0 110px #36e2cd05;pointer-events:none}.eyebrow{font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--teal);font-weight:800;display:flex;gap:12px;align-items:center}.eyebrow:before{content:"";height:8px;width:8px;background:var(--teal);border-radius:50%;box-shadow:0 0 16px var(--teal)}h1{font-size:clamp(34px,5vw,60px);line-height:1.06;max-width:880px;letter-spacing:-.045em;margin:16px 0 18px}h1 span{color:var(--teal)}.intro{color:#c5d5e3;max-width:760px;font-size:16px;margin:0}.content{padding:34px 52px 42px}.topline{display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap;margin-bottom:16px}.section-title{color:#e4f7ff;font-size:15px;text-transform:uppercase;letter-spacing:.12em;margin:0}.tag{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#9bdbd4;background:#133b42;border:1px solid #2c7774;border-radius:50px;padding:6px 12px;font-weight:700}.diagram{background:linear-gradient(180deg,#081725,#0b1c2b);border:1px solid #315169;border-radius:16px;padding:18px 25px 16px;overflow:hidden}.diagram svg{width:100%;height:auto;display:block}.diagram-note{font-size:12px;color:var(--muted);margin:8px 0 0;text-align:center}.legend{display:flex;gap:19px;justify-content:center;flex-wrap:wrap;margin-top:10px;font-size:11px;color:#b2c9d9}.legend b{font-weight:600}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}.dot.green{background:#36e2cd}.dot.blue{background:#78a9ff}.dot.amber{background:#f8c474}.lower{display:grid;grid-template-columns:1.06fr .94fr;gap:30px;margin-top:31px}.stack{display:grid;gap:28px}.lower h2{font-size:22px;margin:0 0 12px;letter-spacing:-.02em}.writeup p{font-size:15px;color:#c3d4e2;margin:0 0 13px}.highlight{color:var(--teal);font-weight:700}.points{display:grid;gap:10px}.point{background:var(--panel2);border:1px solid var(--line);padding:14px 15px;border-radius:12px;display:flex;gap:13px}.point-icon{color:var(--teal);font-size:19px;line-height:1.2;min-width:24px}.point strong{display:block;font-size:13px;color:#eaf6ff;letter-spacing:.02em}.point small{display:block;font-size:12px;color:var(--muted);margin-top:3px}.mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.mini-card{background:#0d1e2d;border:1px solid var(--line);border-radius:12px;padding:14px}.mini-card h3{margin:0 0 5px;font-size:13px;color:#eaf6ff;text-transform:uppercase;letter-spacing:.08em}.mini-card p{margin:0;font-size:12px;color:var(--muted)}.footer{border-top:1px solid var(--line);padding:22px 52px;display:flex;gap:12px;justify-content:space-between;align-items:center;color:#a4bacb;font-size:12px}.footer strong{letter-spacing:.1em;text-transform:uppercase;color:#cbf5ed}.toolbar{display:flex;justify-content:flex-end;margin:0 0 12px}.print-btn{border:1px solid #3e827e;color:#d7fff8;border-radius:9px;background:#103638;padding:10px 16px;font-weight:750;cursor:pointer}.print-btn:hover{background:#195156}.callout{background:linear-gradient(145deg,#10273a,#0d1e2b);border:1px solid #2b4556;border-radius:14px;padding:16px 18px}.callout h2{margin-bottom:10px}.callout ul{margin:0;padding-left:18px;color:#c3d4e2}.callout li{margin:0 0 8px}.rule-list{display:grid;gap:8px}.rule{border-left:3px solid var(--teal);background:#0d1d2c;padding:10px 12px;border-radius:8px}.rule b{color:#eaf6ff}.rule span{color:#a6bccd;font-size:12px;display:block;margin-top:2px}@media(max-width:820px){.page{padding:0 12px;margin:14px auto}.masthead{padding:30px 24px}.content{padding:25px 19px}.lower{grid-template-columns:1fr}.mini-grid{grid-template-columns:1fr}.footer{padding:19px 24px;flex-direction:column;align-items:flex-start}.diagram{padding:8px}.intro{font-size:14px}}@media print{@page{size:A4 portrait;margin:8mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}.page{max-width:none;padding:0;margin:0}.poster{border-radius:0;box-shadow:none}.toolbar{display:none}.masthead{padding:25px 32px 22px}h1{font-size:40px}.content{padding:20px 32px 22px}.lower{gap:18px;margin-top:20px}.point,.mini-card,.callout,.rule{padding:10px}.footer{padding:12px 32px}.diagram{padding:8px}.writeup p,.callout li,.mini-card p,.point small,.rule span{font-size:11px}.intro{font-size:13px}.lower h2{font-size:18px}.diagram-note,.legend{font-size:10px}}
+.toolbar{justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.return-btn{display:inline-block;text-decoration:none;font-size:14px}.return-btn:focus-visible{outline:2px solid var(--teal);outline-offset:4px}
+</style>
+</head>
+<body>
+<div class="page">
+<div class="toolbar"><a class="print-btn return-btn" href="../gui/projects">← Return to Projects</a><button class="print-btn" onclick="window.print()" aria-label="Print or save poster as PDF">Print / Save as PDF ↗</button></div>
+<main class="poster">
+<header class="masthead">
+  <div class="eyebrow">Cybersecurity Portfolio / Home Lab Project</div>
+  <h1>Building a <span>Hierarchical Network</span> to Improve Security</h1>
+  <p class="intro">Reworking my home lab from a flatter design into a layered architecture using <strong>core, distribution, and access</strong> concepts so I can better control traffic, reduce unnecessary exposure, and support future growth.</p>
+</header>
+<section class="content" aria-labelledby="architecture">
+<div class="topline"><h2 class="section-title" id="architecture">Network architecture / layered design</h2><span class="tag">Core • Distribution • Access</span></div>
+<div class="diagram">
+<svg viewBox="0 0 980 560" role="img" aria-label="Hierarchical home-lab network diagram. Internet connects to an OPNsense core firewall. The core connects to distribution devices, including a managed switch and a future redundant distribution switch. The distribution layer feeds access-layer zones including trusted endpoints, server and monitoring systems, a security lab, and IoT or guest devices.">
+<defs>
+  <linearGradient id="node" x2="1" y2="1"><stop stop-color="#17384b"/><stop offset="1" stop-color="#102331"/></linearGradient>
+  <linearGradient id="amber" x2="1" y2="1"><stop stop-color="#3b311d"/><stop offset="1" stop-color="#2a2316"/></linearGradient>
+</defs>
+<g font-family="Inter,system-ui,sans-serif" text-anchor="middle">
+  <text x="490" y="18" fill="#7be7db" font-size="13" font-weight="800" letter-spacing="1.4">CORE LAYER</text>
+  <rect x="400" y="28" width="180" height="56" rx="12" fill="#10283b" stroke="#78a9ff" stroke-width="1.5"/>
+  <text x="490" y="51" fill="#eaf5ff" font-size="17" font-weight="750">INTERNET</text>
+  <text x="490" y="67" fill="#94b6cb" font-size="10">External connectivity</text>
+  <path d="M490 84 V122" fill="none" stroke="#78a9ff" stroke-width="3"/>
+  <rect x="332" y="122" width="316" height="84" rx="13" fill="url(#node)" stroke="#36e2cd" stroke-width="2"/>
+  <text x="490" y="152" fill="#e5fff9" font-size="22" font-weight="800">OPNsense Firewall / Router</text>
+  <text x="490" y="174" fill="#9bdcd5" font-size="12">Routing • Policy enforcement • Inter-zone control</text>
+  <rect x="396" y="183" width="188" height="22" rx="10" fill="#0e383b" stroke="#2d6c68"/>
+  <text x="490" y="198" fill="#7be7db" font-size="10" font-weight="700">PRIMARY SECURITY BOUNDARY</text>
+
+  <text x="490" y="242" fill="#7be7db" font-size="13" font-weight="800" letter-spacing="1.4">DISTRIBUTION LAYER</text>
+  <path d="M490 206 V248" stroke="#36e2cd" stroke-width="3"/>
+  <path d="M490 248 V280" stroke="#5e97ad" stroke-width="2.5"/>
+  <path d="M490 280 H290" stroke="#5e97ad" stroke-width="2.5"/>
+  <path d="M490 280 H690" stroke="#f8c474" stroke-width="2.5" stroke-dasharray="6 4"/>
+  <rect x="183" y="280" width="214" height="70" rx="12" fill="#132b3b" stroke="#5a91ad" stroke-width="1.5"/>
+  <text x="290" y="308" fill="#eaf5ff" font-size="17" font-weight="750">Managed Switch</text>
+  <text x="290" y="328" fill="#a8bdcb" font-size="11">Current distribution device</text>
+  <rect x="583" y="280" width="214" height="70" rx="12" fill="url(#amber)" stroke="#f8c474" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="690" y="308" fill="#ffe1a5" font-size="17" font-weight="750">Additional Distribution</text>
+  <text x="690" y="328" fill="#d6c6a4" font-size="11">Planned for redundancy / expansion</text>
+
+  <text x="490" y="387" fill="#7be7db" font-size="13" font-weight="800" letter-spacing="1.4">ACCESS LAYER</text>
+  <path d="M290 350 V388 M690 350 V388" stroke="#5e97ad" stroke-width="2.5"/>
+  <path d="M128 388 H852" stroke="#5e97ad" stroke-width="2.5"/>
+  <path d="M128 388 V414 M362 388 V414 M618 388 V414 M852 388 V414" stroke="#5e97ad" stroke-width="2.5"/>
+
+  <rect x="24" y="414" width="208" height="118" rx="13" fill="#0d2738" stroke="#78a9ff" stroke-width="1.5"/>
+  <rect x="24" y="414" width="208" height="7" rx="3" fill="#78a9ff"/>
+  <text x="128" y="444" fill="#caddff" font-size="16" font-weight="800">TRUSTED ENDPOINTS</text>
+  <text x="128" y="465" fill="#d7e5ee" font-size="13">Admin workstation</text>
+  <text x="128" y="484" fill="#d7e5ee" font-size="13">Approved user devices</text>
+  <text x="128" y="514" fill="#87a4ba" font-size="11">Access only to required services</text>
+
+  <rect x="258" y="414" width="208" height="118" rx="13" fill="#0b2e31" stroke="#36e2cd" stroke-width="1.5"/>
+  <rect x="258" y="414" width="208" height="7" rx="3" fill="#36e2cd"/>
+  <text x="362" y="444" fill="#a6fff2" font-size="16" font-weight="800">SERVER / MONITORING</text>
+  <text x="362" y="465" fill="#d7e5ee" font-size="13">Ubuntu server(s)</text>
+  <text x="362" y="484" fill="#d7e5ee" font-size="13">Wazuh visibility & logging</text>
+  <text x="362" y="514" fill="#87a4ba" font-size="11">Protected infrastructure zone</text>
+
+  <rect x="514" y="414" width="208" height="118" rx="13" fill="#302a1e" stroke="#f8c474" stroke-width="1.5"/>
+  <rect x="514" y="414" width="208" height="7" rx="3" fill="#f8c474"/>
+  <text x="618" y="444" fill="#ffe1a5" font-size="16" font-weight="800">SECURITY LAB</text>
+  <text x="618" y="465" fill="#e9e0d1" font-size="13">Testing systems</text>
+  <text x="618" y="484" fill="#e9e0d1" font-size="13">Controlled experiments</text>
+  <text x="618" y="514" fill="#bea98d" font-size="11">More isolated than production assets</text>
+
+  <rect x="748" y="414" width="208" height="118" rx="13" fill="#302a1e" stroke="#f8c474" stroke-width="1.5"/>
+  <rect x="748" y="414" width="208" height="7" rx="3" fill="#f8c474"/>
+  <text x="852" y="444" fill="#ffe1a5" font-size="16" font-weight="800">IoT / GUEST</text>
+  <text x="852" y="465" fill="#e9e0d1" font-size="13">Lower-trust devices</text>
+  <text x="852" y="484" fill="#e9e0d1" font-size="13">Highly restricted reachability</text>
+  <text x="852" y="514" fill="#bea98d" font-size="11">Blocked from sensitive systems</text>
+</g>
+<text x="490" y="552" fill="#94acbd" font-size="12" font-family="Inter,system-ui,sans-serif" text-anchor="middle">The design goal is to push communication through intentional policy decisions instead of allowing broad network-wide trust.</text>
+</svg>
+<div class="legend"><span><i class="dot green"></i><b>Current technologies</b></span><span><i class="dot blue"></i><b>Established access zones</b></span><span><i class="dot amber"></i><b>Planned growth / redundancy</b></span></div>
+<p class="diagram-note">Conceptual portfolio view based on my home-lab design direction. Redundancy and expanded distribution are part of the next phase of the project.</p>
+</div>
+
+<div class="lower">
+  <div class="stack">
+    <div class="writeup">
+      <h2>Project write-up</h2>
+      <p>I wanted my home lab to evolve from a mostly flat network into a <span class="highlight">hierarchical design</span> with clearer security boundaries. Instead of treating every device as if it belongs on the same level of trust, I started organizing the environment around the <span class="highlight">core, distribution, and access layers</span>.</p>
+      <p>At the core of the design, I am using <span class="highlight">OPNsense</span> as the main firewall and routing platform to control how traffic moves between zones. From there, the distribution layer connects the environment through managed switching, and the access layer contains the actual endpoints, servers, monitoring systems, lab assets, and lower-trust devices.</p>
+      <p>This project has helped me strengthen my understanding of <span class="highlight">segmentation, defense in depth, redundancy planning, and least-privilege access</span>. It also gives me a hands-on platform to keep refining firewall policy, test changes safely, and reduce the chance of unnecessary lateral movement across the network.</p>
+    </div>
+
+    <div class="callout">
+      <h2>Next phase of improvement</h2>
+      <ul>
+        <li><strong>Add redundancy at the distribution layer</strong> by introducing additional devices and pathways so the design becomes more resilient and scalable.</li>
+        <li><strong>Further tighten rule sets</strong> to better align with least-privilege access rather than broad allow rules between zones.</li>
+        <li><strong>Continue separating trust levels</strong> so user devices, server resources, lab systems, and IoT devices only reach what they actually need.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="stack">
+    <div>
+      <h2>Security goals</h2>
+      <div class="points">
+        <div class="point"><div class="point-icon">01</div><div><strong>Reduce lateral movement</strong><small>Limit unnecessary paths between user systems, infrastructure, and experimental devices.</small></div></div>
+        <div class="point"><div class="point-icon">02</div><div><strong>Enforce least privilege</strong><small>Allow each segment to access only the services and destinations it truly needs.</small></div></div>
+        <div class="point"><div class="point-icon">03</div><div><strong>Improve visibility</strong><small>Use Wazuh and logging to monitor behavior, support troubleshooting, and investigate events.</small></div></div>
+        <div class="point"><div class="point-icon">04</div><div><strong>Build for growth</strong><small>Support future redundancy and cleaner segmentation without starting over.</small></div></div>
+      </div>
+    </div>
+
+    <div>
+      <h2>Least-privilege rule focus</h2>
+      <div class="rule-list">
+        <div class="rule"><b>Trusted endpoints → Server zone:</b><span>Allow only required admin and management traffic such as SSH, HTTPS, or specific monitoring access.</span></div>
+        <div class="rule"><b>IoT / Guest → Internal resources:</b><span>Block access to sensitive internal systems by default; allow internet access only where appropriate.</span></div>
+        <div class="rule"><b>Security lab → Production-style systems:</b><span>Keep testing systems isolated and require explicit rules for any approved interaction.</span></div>
+        <div class="rule"><b>Inter-zone access:</b><span>Default deny, then add narrowly scoped exceptions based on service, source, destination, and business need.</span></div>
+      </div>
+    </div>
+
+    <div class="mini-grid">
+      <div class="mini-card"><h3>Core</h3><p>OPNsense handles routing, firewall policy, and the main control point between segments.</p></div>
+      <div class="mini-card"><h3>Distribution</h3><p>Managed switching distributes connectivity and is the focus area for future redundancy improvements.</p></div>
+      <div class="mini-card"><h3>Access</h3><p>Endpoints and service zones connect here based on trust level and functional role.</p></div>
+      <div class="mini-card"><h3>Monitoring</h3><p>Ubuntu and Wazuh provide visibility so the network can be observed, tuned, and defended more effectively.</p></div>
+    </div>
+  </div>
+</div>
+</section>
+<footer class="footer"><strong>Home Lab / Network Security Engineering</strong><span>Technologies: OPNsense · Managed Switching · Ubuntu Linux · Wazuh</span></footer>
+</main>
+</div>
+</body>
+</html>

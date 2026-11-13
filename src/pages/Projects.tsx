@@ -2,6 +2,18 @@ import { ProjectCard } from '../components/ProjectCard'
 
 const projects = [
   {
+    title: 'Hierarchical Network Security Lab',
+    description:
+      'Layered home-lab network using core, distribution, and access tiers to strengthen segmentation, refine least-privilege firewall rules, and improve security monitoring.',
+    stack: ['OPNsense', 'Managed switching', 'Ubuntu', 'Wazuh', 'Network segmentation'],
+    links: [
+      {
+        label: 'View Project',
+        href: `${import.meta.env.BASE_URL}projects/hierarchical_network_security_portfolio.html`,
+      },
+    ],
+  },
+  {
     title: 'Network Lab',
     description:
       'Interactive network simulation with terminal-driven workflows, hidden-segment discovery, and guided command progression.',

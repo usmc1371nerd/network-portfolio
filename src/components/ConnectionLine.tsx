@@ -13,7 +13,12 @@ export function ConnectionLine({
 }: EdgeProps) {
   const pathRef = useRef<SVGPathElement | null>(null)
   const frameRef = useRef<number | null>(null)
-  const [markerPosition, setMarkerPosition] = useState<{ x: number; y: number } | null>(null)
+  const [markerPosition, setMarkerPosition] = useState<{
+    x: number
+    y: number
+    packetKey: string
+    path: string
+  } | null>(null)
 
   const [edgePath] = getBezierPath({
     sourceX,
@@ -31,7 +36,6 @@ export function ConnectionLine({
     }
 
     if (!data?.showPacket || !pathRef.current) {
-      setMarkerPosition(null)
       return
     }
 
@@ -47,7 +51,12 @@ export function ConnectionLine({
       const distance = reverse ? pathLength * (1 - progress) : pathLength * progress
       const point = pathEl.getPointAtLength(distance)
 
-      setMarkerPosition({ x: point.x, y: point.y })
+      setMarkerPosition({
+        x: point.x,
+        y: point.y,
+        packetKey: String(data?.packetKey ?? 0),
+        path: edgePath,
+      })
 
       if (elapsed < durationMs) {
         frameRef.current = window.requestAnimationFrame(tick)
@@ -64,7 +73,7 @@ export function ConnectionLine({
         frameRef.current = null
       }
     }
-  }, [data?.packetDirection, data?.packetKey, data?.showPacket])
+  }, [data?.packetDirection, data?.packetKey, data?.showPacket, edgePath])
 
   return (
     <>
@@ -77,7 +86,9 @@ export function ConnectionLine({
         }}
       />
       <path ref={pathRef} d={edgePath} fill="none" stroke="none" />
-      {data?.showPacket && markerPosition ? (
+      {data?.showPacket && markerPosition &&
+      markerPosition.packetKey === String(data?.packetKey ?? 0) &&
+      markerPosition.path === edgePath ? (
         <circle
           key={String(data?.packetKey ?? 0)}
           cx={markerPosition.x}
