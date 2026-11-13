@@ -38,7 +38,7 @@ export function PCNode({ data }: NodeProps<LabNodeData>) {
       ) : null}
       <div className="node-title">{data.deviceIcon ? `${data.deviceIcon} ${data.label}` : data.label}</div>
       <div className="node-subtitle">
-        {data.isActiveSession ? 'ACTIVE SESSION' : `${data.deviceTitle ?? 'CLIENT'}${data.ip ? ` - ${data.ip}` : ' - IP pending'}`}
+        {data.isActiveSession ? 'ACTIVE SESSION' : `${data.deviceTitle ?? 'CLIENT'}${data.isConnected && data.ip ? ` - ${data.ip}` : ' - No link / DHCP pending'}`}
       </div>
       {data.showCameraShortcut && data.onOpenCameraPanel ? (
         <button
@@ -55,7 +55,7 @@ export function PCNode({ data }: NodeProps<LabNodeData>) {
       <Handle type="source" position={Position.Right} />
       {hintVisible ? (
         <div className={`node-guide-hint${!data.showGuideHint ? ' is-leaving' : ''}`}>
-          Type <strong>{`connect ${data.label.toLowerCase()}`}</strong> in the terminal to continue.
+          Draw a cable to <strong>JP-SERVER</strong>, then run <strong>ip addr</strong>.
         </div>
       ) : null}
     </div>

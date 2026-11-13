@@ -1149,3 +1149,18 @@
     max-height: min(240px, calc(100% - 1.5rem));
   }
 }
+
+.terminal-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.terminal-heading small {
+  color: var(--muted, #a4b9cb);
+  font-size: 0.65rem;
+  font-weight: normal;
+  margin-left: 0.35rem;
+}

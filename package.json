@@ -12,7 +12,8 @@
         "dev": "vite",
         "build": "tsc -b && vite build",
         "lint": "eslint .",
-        "preview": "vite preview"
+        "preview": "vite preview",
+        "test": "node tests/terminal.test.mjs"
     },
     "dependencies": {
         "dompurify": "^3.2.7",

@@ -25,7 +25,10 @@ import {
   initialTerminalLines,
   processTerminalCommand,
   shadowFileSystem,
+  reconcileTerminalContext,
+  completeTerminalInput,
   type TerminalContext,
+  type TerminalRuntime,
 } from './utils/terminal'
 
 export type LabNodeData = {
@@ -86,25 +89,19 @@ const deviceCatalog: Record<string, { labelPrefix: string; title: string; icon: 
   camera: { labelPrefix: 'CAM', title: 'IOT SENSOR', icon: 'IO' },
 }
 
-function getTimestamp(offsetSeconds = 0): string {
-  const date = new Date(Date.now() + offsetSeconds * 1000)
+function getTimestamp(): string {
+  const date = new Date()
   return date.toLocaleTimeString('en-US', { hour12: false })
 }
 
-function getConnectionLogs(pcLabel: string | null): string[] {
-  const sourceLabel = pcLabel ?? 'CLIENT-1'
+function getConnectionLogs(deviceLabel: string | null, assignedIp: string | undefined): string[] {
+  const label = deviceLabel ?? 'CLIENT'
   return [
-    `[${getTimestamp(0)}] ARP request broadcast`,
-    `[${getTimestamp(0)}] ARP reply from JP-SERVER`,
-    `[${getTimestamp(1)}] TCP handshake established`,
-    `[${getTimestamp(2)}] ${sourceLabel} joined JP-SERVER LAN (10.0.0.0/24); SSH route to 10.0.0.1 available`,
-  ]
-}
-
-function getLinkEstablishedLogs(sourceLabel: string, targetLabel: string): string[] {
-  return [
-    `[${getTimestamp(0)}] Link request accepted for ${sourceLabel} -> ${targetLabel}`,
-    `[${getTimestamp(1)}] Layer 2 link established`,
+    `[${getTimestamp()}] Ethernet carrier up: ${label} ↔ JP-SERVER`,
+    `[${getTimestamp()}] DHCP DISCOVER from ${label}`,
+    `[${getTimestamp()}] DHCP OFFER ${assignedIp} from 10.0.0.1`,
+    `[${getTimestamp()}] DHCP REQUEST ${assignedIp} from ${label}`,
+    `[${getTimestamp()}] DHCP ACK ${assignedIp}/24; gateway/DNS 10.0.0.1`,
   ]
 }
 
@@ -114,9 +111,8 @@ function isServerOnlyLink(sourceId: string, targetId: string): boolean {
 
 function getProvisioningLogs(deviceLabel: string, assignedIp: string, deviceTitle: string): string[] {
   return [
-    `[${getTimestamp()}] DHCP request from ${deviceLabel}`,
-    `[${getTimestamp()}] DHCP assigned ${assignedIp}`,
-    `[${getTimestamp(1)}] ${deviceTitle} registered on lab segment`,
+    `[${getTimestamp()}] ${deviceTitle} ${deviceLabel} added; interface has no carrier`,
+    `[${getTimestamp()}] Lab DHCP pool reserved ${assignedIp}; lease pending cable connection`,
   ]
 }
 
@@ -190,26 +186,6 @@ function allocateNextDhcpIp(assignedIps: string[]): string | null {
   return null
 }
 
-function longestCommonPrefix(values: string[]): string {
-  if (values.length === 0) {
-    return ''
-  }
-
-  let prefix = values[0]
-
-  for (let index = 1; index < values.length; index += 1) {
-    const currentValue = values[index]
-    while (!currentValue.startsWith(prefix) && prefix.length > 0) {
-      prefix = prefix.slice(0, -1)
-    }
-    if (!prefix) {
-      break
-    }
-  }
-
-  return prefix
-}
-
 function getDirectoryForPath(
   root: Record<string, unknown>,
   path: string[],
@@ -256,93 +232,23 @@ function renderViewerContent(content: string): Array<string | { text: string; hr
 
 function getAlwaysOnSuggestedCommands(options: {
   helpEnabled: boolean
-  onboardingStep: TerminalContext['onboardingStep']
-  connectedTo: TerminalContext['connectedTo']
-  currentPath: string[]
-  pcLabels: string[]
-  lastPcLabel: string | null
-  hasServerConnection: boolean
+  context: TerminalContext
+  runtime: TerminalRuntime
 }): string[] {
-  const { helpEnabled, onboardingStep, connectedTo, currentPath, pcLabels, lastPcLabel, hasServerConnection } = options
-
-  if (!helpEnabled) {
-    return []
+  const { helpEnabled, context, runtime } = options
+  if (!helpEnabled) return []
+  if (context.pendingSSH) return context.pendingSSH.phase === 'host-key' ? ['yes', 'no'] : []
+  if (!context.connectedTo) {
+    const workstation = Array.from(runtime.pcNodes).find(([ip]) => ['pc', 'laptop'].includes(runtime.deviceKinds.get(ip) ?? 'pc'))
+    return workstation ? [`console ${workstation[1].toLowerCase()}`, 'help'] : ['help', 'resume']
   }
-
-  const firstPcLabel = pcLabels[0]?.toLowerCase()
-  const pingPeer = (lastPcLabel ?? pcLabels[0] ?? 'pc-1').toLowerCase()
-
-  if (pcLabels.length === 0) {
-    return ['resume', 'help']
+  if (context.connectedTo === 'pc') {
+    if (!runtime.linkedIps.has(context.connectedIp ?? '')) return ['ip addr', 'ip route', 'help']
+    return ['ip addr', 'ip route', 'ping -c 4 server', 'nmap -sn 10.0.0.0/24', 'ssh guest@server', 'help']
   }
-
-  if (onboardingStep === 'connect-pc-1' && firstPcLabel) {
-    return ['resume', `connect ${firstPcLabel}`, 'help']
-  }
-
-  if (!hasServerConnection && firstPcLabel) {
-    return ['resume', `connect ${firstPcLabel}`, 'help']
-  }
-
-  if (onboardingStep === 'ssh-pc-1' && firstPcLabel) {
-    return ['resume', `ssh ${firstPcLabel}`, 'help']
-  }
-
-  if (connectedTo === null && firstPcLabel) {
-    return ['resume', `ssh ${firstPcLabel}`, 'help']
-  }
-
-  if (onboardingStep === 'ssh-server') {
-    return ['resume', 'ssh server', `ssh ${firstPcLabel ?? 'pc-1'}`, 'help']
-  }
-
-  if (connectedTo === 'pc') {
-    return ['resume', 'ssh server', 'nmap 10.0.0.0/24', 'ping server', 'help']
-  }
-
-  if (connectedTo === 'server') {
-    const currentDirectory = getDirectoryForPath(serverFileSystem as Record<string, unknown>, currentPath)
-
-    if (currentPath.length === 0) {
-      const directoryNames = Object.entries(serverFileSystem)
-        .filter(([name, value]) => !name.startsWith('.') && typeof value !== 'string')
-        .map(([name]) => name)
-      return ['resume', 'help', 'ls', `ping ${pingPeer}`, ...directoryNames.map((directoryName) => `cd ${directoryName}`)]
-    }
-
-    if (!currentDirectory) {
-      return ['resume', 'help', 'ls', 'cd ..', `ping ${pingPeer}`]
-    }
-
-    const fileNames = Object.entries(currentDirectory)
-      .filter(([name, value]) => typeof value === 'string' && !name.startsWith('.'))
-      .map(([name]) => name)
-    const directoryNames = Object.entries(currentDirectory)
-      .filter(([name, value]) => typeof value !== 'string' && !name.startsWith('.'))
-      .map(([name]) => name)
-
-    const suggestions = [
-      'resume',
-      'help',
-      'ls',
-      'cd ..',
-      `ping ${pingPeer}`,
-      ...directoryNames.map((directoryName) => `cd ${directoryName}`),
-      ...fileNames.map((fileName) => `cat ${fileName}`),
-    ]
-
-    return suggestions
-  }
-
-  if (connectedTo === 'shadow') {
-    if (currentPath.length === 0) {
-      return ['resume', 'help', 'ls', 'cd shadow', 'cd ops', 'cd archive', 'ping server', 'exit']
-    }
-
-    return ['resume', 'help', 'ls', 'cd ..', 'ping server', 'exit']
-  }
-
-  return ['resume', 'help']
+  const root = context.connectedTo === 'shadow' ? shadowFileSystem : serverFileSystem
+  const directory = getDirectoryForPath(root as Record<string, unknown>, context.currentPath)
+  return ['pwd', 'ls', 'ip route', 'exit', ...(context.currentPath.length ? ['cd ..'] : []), ...Object.entries(directory ?? {}).filter(([name]) => !name.startsWith('.')).map(([name, value]) => `${typeof value === 'string' ? 'cat' : 'cd'} ${name}`)]
 }
 
 function App() {
@@ -356,6 +262,11 @@ function App() {
   const [cameraSessions, setCameraSessions] = useState<Record<string, CameraPanelSession>>({})
   const [terminalLines, setTerminalLines] = useState<string[]>(initialTerminalLines)
   const [terminalInput, setTerminalInput] = useState('')
+  const [terminalRunning, setTerminalRunning] = useState(false)
+  const terminalTimersRef = useRef<number[]>([])
+  const terminalRunningRef = useRef(false)
+  const pingProgressRef = useRef<{ target: string; received: number } | null>(null)
+
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [historyCursor, setHistoryCursor] = useState<number | null>(null)
   const [historyDraftInput, setHistoryDraftInput] = useState('')
@@ -370,6 +281,23 @@ function App() {
     onboardingStep: 'drop-pc-1',
     shadowDiscovered: false,
   })
+  const cancelTerminalCommand = useCallback(() => {
+    terminalTimersRef.current.forEach(window.clearTimeout)
+    terminalTimersRef.current = []
+    terminalRunningRef.current = false
+    setTerminalRunning(false)
+    setTerminalInput('')
+    setHistoryCursor(null)
+    setHistoryDraftInput('')
+    setTerminalContext(current => ({ ...current, pendingSSH: undefined }))
+    const ping = pingProgressRef.current
+    pingProgressRef.current = null
+    setTerminalLines(current => [...current, '^C', ...(ping ? [
+      `--- ${ping.target} ping statistics ---`,
+      `${ping.received} packets transmitted, ${ping.received} received, 0% packet loss (interrupted)`,
+    ] : [])])
+    setPacketLogs(current => [...current, `[${getTimestamp()}] terminal: command/login canceled by user`])
+  }, [])
   const [nodeCount, setNodeCount] = useState(1)
   const [assignedPcIps, setAssignedPcIps] = useState<string[]>([])
   const [helpEnabled, setHelpEnabled] = useState(true)
@@ -463,6 +391,20 @@ function App() {
     return ids
   }, [edges])
 
+  const terminalRuntime = useMemo<TerminalRuntime>(() => ({
+    knownIps: knownNodeIps,
+    serverReachable: hasServerConnection,
+    pcNodes,
+    linkedIps: new Set(nodes.filter(node => node.data.ip && edges.some(edge =>
+      (edge.source === node.id && edge.target === 'jp-server') ||
+      (edge.target === node.id && edge.source === 'jp-server'),
+    )).map(node => node.data.ip!)),
+    deviceKinds: new Map(nodes.filter(node => node.data.ip).map(node => [node.data.ip!, node.data.deviceKind ?? 'pc'])),
+    serverIp: serverNodeData.ip,
+    serverLabel: serverNodeData.label,
+    helpEnabled,
+  }), [edges, nodes, knownNodeIps, hasServerConnection, pcNodes, serverNodeData, helpEnabled])
+
   const labelToNodeId = useMemo(() => {
     const map = new Map<string, string>()
 
@@ -554,6 +496,7 @@ function App() {
   )
 
   const handleRemoveDeviceNode = useCallback((nodeId: string) => {
+    if (terminalRunningRef.current) cancelTerminalCommand()
     const nodeToRemove = nodes.find((node) => node.id === nodeId)
 
     if (!nodeToRemove || nodeToRemove.type !== 'pcNode') {
@@ -621,17 +564,6 @@ function App() {
     })
 
     if (shouldDisconnectSession) {
-      setTerminalContext((currentContext) => ({
-        ...currentContext,
-        connected: false,
-        connectedTo: null,
-        connectedLabel: null,
-        connectedIp: null,
-        lastPcLabel: null,
-        lastPcIp: null,
-        currentPath: [],
-        onboardingStep: remainingClientCount > 0 ? 'connect-pc-1' : 'drop-pc-1',
-      }))
       setActivePanel(null)
       return
     }
@@ -642,7 +574,7 @@ function App() {
         onboardingStep: 'drop-pc-1',
       }))
     }
-  }, [nodes, packetAnimation, setEdges, setNodes, terminalContext.connectedLabel, terminalContext.lastPcLabel])
+  }, [cancelTerminalCommand, nodes, packetAnimation, setEdges, setNodes, terminalContext.connectedLabel, terminalContext.lastPcLabel])
 
   const decoratedNodes = useMemo(
     () =>
@@ -654,7 +586,7 @@ function App() {
           isActiveSession:
             terminalContext.connectedLabel !== null &&
             node.data.label.toLowerCase() === terminalContext.connectedLabel.toLowerCase(),
-          showGuideHint: helpEnabled && node.id === 'pc-1' && terminalContext.onboardingStep === 'connect-pc-1',
+          showGuideHint: helpEnabled && node.data.label === terminalContext.connectedLabel && terminalContext.connectedTo === 'pc' && !connectedNodeIds.has(node.id),
           isRemovable: node.type === 'pcNode',
           onRemove: node.type === 'pcNode' ? () => handleRemoveDeviceNode(node.id) : undefined,
           showCameraShortcut:
@@ -668,20 +600,13 @@ function App() {
               : undefined,
         },
       })),
-    [activePanel, connectedNodeIds, handleRemoveDeviceNode, helpEnabled, nodes, openCameraPanel, terminalContext.connectedLabel, terminalContext.onboardingStep],
+    [activePanel, connectedNodeIds, handleRemoveDeviceNode, helpEnabled, nodes, openCameraPanel, terminalContext.connectedLabel, terminalContext.connectedTo],
   )
 
-  const suggestedCommands = useMemo(() => {
-    return getAlwaysOnSuggestedCommands({
-      helpEnabled,
-      onboardingStep: terminalContext.onboardingStep,
-      connectedTo: terminalContext.connectedTo,
-      currentPath: terminalContext.currentPath,
-      pcLabels: Array.from(pcNodes.values()),
-      lastPcLabel: terminalContext.lastPcLabel,
-      hasServerConnection,
-    })
-  }, [hasServerConnection, helpEnabled, pcNodes, terminalContext.connectedTo, terminalContext.currentPath, terminalContext.lastPcLabel, terminalContext.onboardingStep])
+  const suggestedCommands = useMemo(
+    () => terminalRunning ? [] : getAlwaysOnSuggestedCommands({ helpEnabled, context: terminalContext, runtime: terminalRuntime }),
+    [terminalRunning, helpEnabled, terminalContext, terminalRuntime],
+  )
 
   const canvasGuideMessage = useMemo(() => {
     if (!helpEnabled) {
@@ -689,15 +614,14 @@ function App() {
     }
 
     if (nodeCount === 1 && terminalContext.onboardingStep === 'drop-pc-1') {
-      return 'Drag a PC into the canvas to get started. See terminal for suggested commands.'
+      return 'Drag a PC or laptop onto the canvas to open its local console.'
     }
 
-    if (suggestedCommands.length === 0) {
-      return null
-    }
-
-    return `Next step: ${suggestedCommands[0]}. See terminal for suggested commands.`
-  }, [helpEnabled, nodeCount, suggestedCommands, terminalContext.onboardingStep])
+    if (terminalContext.pendingSSH) return 'Complete SSH login in the terminal; Ctrl+C cancels.'
+    if (terminalRunning) return 'Command running. Ctrl+C cancels.'
+    if (terminalContext.connectedTo === 'pc' && !terminalRuntime.linkedIps.has(terminalContext.connectedIp ?? '')) return 'Draw a cable from this workstation to JP-SERVER, then inspect ip addr and ip route.'
+    return `Try: ${suggestedCommands[0] ?? 'help'}. See terminal for suggested commands.`
+  }, [helpEnabled, nodeCount, suggestedCommands, terminalContext, terminalRunning, terminalRuntime])
 
   const connectNodesById = useCallback(
     (sourceId: string, targetId: string, shouldAnimateImmediately = true) => {
@@ -755,7 +679,7 @@ function App() {
         triggerPacketAnimation(sourceId, targetId, false)
       }
 
-      setPacketLogs((currentLogs) => [...currentLogs, ...getConnectionLogs(sourcePc ?? targetPc)])
+      setPacketLogs((currentLogs) => [...currentLogs, ...getConnectionLogs(sourcePc ?? targetPc, sourceNode?.type === 'pcNode' ? sourceNode.data.ip : targetNode?.data.ip)])
 
       if (cameraNodeId) {
         openCameraPanel(cameraNodeId)
@@ -848,30 +772,33 @@ function App() {
       setTerminalLines((currentLines) => [
         ...currentLines,
         'device detected:',
-        `${nextLabel} assigned ${assignedIp}`,
+        `${nextLabel}: interface DOWN; address ${assignedIp} reserved until cabled`,
         `${deviceProfile.title} ready for uplink`,
         '',
         'next step:',
-        `connect ${nextLabel.toLowerCase()}`,
+        `draw a cable from ${nextLabel} to JP-SERVER (or lab control: connect ${nextLabel.toLowerCase()})`,
       ])
-      if (nextId === 'pc-1' && helpEnabled) {
-        setTerminalContext((currentContext) => ({
-          ...currentContext,
-          onboardingStep: 'connect-pc-1',
-        }))
+      if (['pc', 'laptop'].includes(deviceType)) {
+        setTerminalContext(current => current.connectedTo ? current : {
+          ...current, connected: true, connectedTo: 'pc', connectedLabel: nextLabel,
+          connectedIp: assignedIp, lastPcLabel: nextLabel, lastPcIp: assignedIp,
+          user: 'guest', currentPath: [], sessions: [], onboardingStep: 'connect-pc-1',
+        })
       }
     },
-    [assignedPcIps, helpEnabled, nodeCount, setNodes],
+    [assignedPcIps, nodeCount, setNodes],
   )
 
   const executeTerminalCommand = useCallback((rawCommand: string) => {
-    const command = rawCommand.trim()
+    if (terminalRunningRef.current) return
+    const isPassword = terminalContext.pendingSSH?.phase === 'password'
+    const command = isPassword ? rawCommand : rawCommand.trim()
 
-    if (!command) {
+    if (!command && !terminalContext.pendingSSH) {
       return
     }
 
-    setCommandHistory((currentHistory) => [...currentHistory, command])
+    if (!terminalContext.pendingSSH) setCommandHistory((currentHistory) => [...currentHistory, command])
     setHistoryCursor(null)
     setHistoryDraftInput('')
     setTerminalGlitchActive(false)
@@ -883,19 +810,12 @@ function App() {
 
     const previousContext = terminalContext
     const prompt = buildPrompt(previousContext)
-    const result = processTerminalCommand(command, previousContext, serverFileSystem, {
-      knownIps: knownNodeIps,
-      serverReachable: hasServerConnection,
-      pcNodes,
-      serverIp: serverNodeData.ip,
-      serverLabel: serverNodeData.label,
-      helpEnabled,
-    })
+    const result = processTerminalCommand(command, previousContext, serverFileSystem, terminalRuntime)
 
     setTerminalContext(result.context)
 
     const auditLogs = getCommandAuditLogs({
-      command,
+      command: isPassword ? '[password redacted]' : command,
       prompt,
       previousContext,
       nextContext: result.context,
@@ -903,7 +823,7 @@ function App() {
       triggeredSecurityGlitch: result.triggeredSecurityGlitch,
       openedFilePath: result.openedFile?.path,
     })
-    setPacketLogs((currentLogs) => [...currentLogs, ...auditLogs])
+    setPacketLogs((currentLogs) => [...currentLogs, ...auditLogs, ...(result.networkLogs ?? []).map(line => `[${getTimestamp()}] ${line}`)])
 
     if (result.triggeredSecurityGlitch) {
       setTerminalGlitchActive(true)
@@ -942,29 +862,45 @@ function App() {
       const targetId = labelToNodeId.get(targetLabel.toLowerCase())
 
       if (sourceId && targetId) {
-        const created = connectNodesById(sourceId, targetId)
-        if (created) {
-          setPacketLogs((currentLogs) => [
-            ...currentLogs,
-            ...getLinkEstablishedLogs(sourceLabel, targetLabel),
-          ])
-        }
+        connectNodesById(sourceId, targetId)
       }
     }
 
-    setTerminalLines((currentLines) => [...currentLines, `${prompt} ${command}`, ...result.output])
+    const echo = `${prompt}${isPassword ? '' : ` ${command}`}`
+    if (result.streamed && result.output.length > 0) {
+      terminalRunningRef.current = true
+      pingProgressRef.current = result.output[0].startsWith('PING ') && result.packetEvent
+        ? { target: result.packetEvent.toIp, received: 0 } : null
+      setTerminalRunning(true)
+      setTerminalLines(current => [...current, echo])
+      result.output.forEach((line, index) => {
+        const timer = window.setTimeout(() => {
+          setTerminalLines(current => [...current, line])
+          if (line.includes('icmp_seq=') && pingProgressRef.current) {
+            pingProgressRef.current.received++
+            const target = pingProgressRef.current.target
+            setPacketLogs(current => [...current, `[${getTimestamp()}] ICMP echo reply from ${target}`])
+          }
+          if (index === result.output.length - 1) {
+            terminalRunningRef.current = false
+            pingProgressRef.current = null
+            terminalTimersRef.current = []
+            setTerminalRunning(false)
+          }
+        }, 250 * (index + 1))
+        terminalTimersRef.current.push(timer)
+      })
+    } else {
+      setTerminalLines(current => [...current, echo, ...result.output])
+    }
 
     setTerminalInput('')
   }, [
     connectNodesById,
-    hasServerConnection,
-    helpEnabled,
     ipToNodeId,
-    knownNodeIps,
     labelToNodeId,
-    pcNodes,
-    serverNodeData,
     terminalContext,
+    terminalRuntime,
     triggerPacketAnimation,
   ])
 
@@ -989,222 +925,25 @@ function App() {
   }, [historyCursor])
 
   const handleAutocomplete = useCallback(() => {
-    const trimmed = terminalInput.trim()
-    if (!trimmed) {
-      return
-    }
-
-    const activeFileSystem =
-      terminalContext.connectedTo === 'shadow'
-        ? (shadowFileSystem as Record<string, unknown>)
-        : (serverFileSystem as Record<string, unknown>)
-
-    const baseCommands =
-      terminalContext.connectedTo === 'server' || terminalContext.connectedTo === 'shadow'
-        ? ['help', 'ping', 'ssh', 'nmap', 'whoami', 'resume', 'ls', 'cd', 'cat', 'clear']
-        : ['help', 'ping', 'ssh', 'connect', 'nmap', 'whoami', 'resume', 'clear']
-    const sectionAliases = new Map<string, string>([['certification', 'certifications']])
-    const sectionKeywords =
-      terminalContext.connectedTo === 'server' || terminalContext.connectedTo === 'shadow'
-        ? Object.entries(activeFileSystem)
-            .filter(([name, value]) => !name.startsWith('.') && typeof value !== 'string')
-            .map(([name]) => name)
-        : []
-
-    const knownIps = Array.from(knownNodeIps).sort()
-    const parts = trimmed.split(/\s+/)
-
-    if (parts.length === 1 && !terminalInput.endsWith(' ')) {
-      const commandPrefix = parts[0].toLowerCase()
-      const keywordCandidates = sectionKeywords
-        .map((keyword) => keyword.toLowerCase())
-        .concat(Array.from(sectionAliases.keys()))
-
-      const candidates = [...baseCommands, ...keywordCandidates].filter((cmd) =>
-        cmd.startsWith(commandPrefix),
-      )
-      if (candidates.length === 0) {
-        return
-      }
-
-      const completion =
-        candidates.length === 1 ? candidates[0] : longestCommonPrefix(candidates)
-
-      if (!completion) {
-        return
-      }
-
-      const requiresArg = ['ping', 'ssh', 'cd', 'cat'].includes(completion)
-
-      if (requiresArg) {
-        setTerminalInput(`${completion} `)
-        return
-      }
-
-      if (!baseCommands.includes(completion) && terminalContext.connectedTo === 'server') {
-        const mappedKeyword = sectionAliases.get(completion) ?? completion
-        setTerminalInput(`cd ${mappedKeyword}`)
-        return
-      }
-
-      setTerminalInput(completion)
-      return
-    }
-
-    const command = parts[0].toLowerCase()
-    const argPrefix = terminalInput.endsWith(' ') ? '' : parts[parts.length - 1]
-
-    if (command === 'ping') {
-      const candidates = ['server', ...Array.from(pcNodes.values()).map((label) => label.toLowerCase()), ...knownIps]
-        .filter((target) => target.startsWith(argPrefix.toLowerCase()))
-      if (candidates.length === 1) {
-        setTerminalInput(`ping ${candidates[0]}`)
-      } else if (candidates.length > 1) {
-        const prefix = longestCommonPrefix(candidates)
-        if (prefix) {
-          setTerminalInput(`ping ${prefix}`)
-        }
-      }
-      return
-    }
-
-    if (command === 'nmap') {
-      const nmapTargets = [
-        '10.0.0.0/24',
-        'server',
-        ...Array.from(pcNodes.values()).map((label) => label.toLowerCase()),
-        ...knownIps,
-        ...(terminalContext.shadowDiscovered ? ['10.0.13.37', 'shadow-gateway'] : []),
-      ]
-      const candidates = Array.from(new Set(nmapTargets)).filter((target) =>
-        target.startsWith(argPrefix.toLowerCase()),
-      )
-
-      if (candidates.length === 1) {
-        setTerminalInput(`nmap ${candidates[0]}`)
-      } else if (candidates.length > 1) {
-        const prefix = longestCommonPrefix(candidates)
-        if (prefix) {
-          setTerminalInput(`nmap ${prefix}`)
-        }
-      }
-      return
-    }
-
-    if (command === 'ssh') {
-      const labels = ['server', ...Array.from(pcNodes.values()).map((label) => label.toLowerCase())]
-      const targetCandidates = knownIps.map((ip) => `guest@${ip}`)
-      const allCandidates = [...labels, ...targetCandidates, ...knownIps]
-      const candidates = allCandidates.filter((candidate) => candidate.startsWith(argPrefix))
-
-      if (candidates.length === 1) {
-        setTerminalInput(`ssh ${candidates[0]}`)
-      } else if (candidates.length > 1) {
-        const prefix = longestCommonPrefix(candidates)
-        if (prefix) {
-          setTerminalInput(`ssh ${prefix}`)
-        }
-      }
-      return
-    }
-
-    if (command === 'connect') {
-      const labels = Array.from(pcNodes.values()).map((label) => label.toLowerCase())
-      const connectTargets = [...labels, 'server']
-      const candidates = connectTargets.filter((candidate) => candidate.startsWith(argPrefix.toLowerCase()))
-
-      if (parts.length <= 2) {
-        if (candidates.length === 1) {
-          setTerminalInput(`connect ${candidates[0]}`)
-        } else if (candidates.length > 1) {
-          const prefix = longestCommonPrefix(candidates)
-          if (prefix) {
-            setTerminalInput(`connect ${prefix}`)
-          }
-        }
-        return
-      }
-
-      const targetCandidates = ['server'].filter((candidate) =>
-        candidate.startsWith(argPrefix.toLowerCase()),
-      )
-      if (targetCandidates.length === 1) {
-        setTerminalInput(`connect ${parts[1]} ${targetCandidates[0]}`)
-      } else if (targetCandidates.length > 1) {
-        const prefix = longestCommonPrefix(targetCandidates)
-        if (prefix) {
-          setTerminalInput(`connect ${parts[1]} ${prefix}`)
-        }
-      }
-      return
-    }
-
-    if (command === 'cd' && (terminalContext.connectedTo === 'server' || terminalContext.connectedTo === 'shadow')) {
-      const currentDir = getDirectoryForPath(
-        activeFileSystem,
-        terminalContext.currentPath,
-      )
-
-      if (!currentDir) {
-        return
-      }
-
-      const directoryCandidates = Object.entries(currentDir)
-        .filter(([, value]) => typeof value !== 'string')
-        .map(([name]) => name)
-      const normalizedPrefix = argPrefix.toLowerCase()
-      const aliasCandidates = Array.from(sectionAliases.entries())
-        .filter(([, canonical]) => directoryCandidates.includes(canonical))
-        .map(([alias]) => alias)
-
-      const candidates = [...directoryCandidates, ...aliasCandidates].filter((candidate) =>
-        candidate.toLowerCase().startsWith(normalizedPrefix),
-      )
-
-      if (candidates.length === 1) {
-        const resolved = sectionAliases.get(candidates[0]) ?? candidates[0]
-        setTerminalInput(`cd ${resolved}`)
-      } else if (candidates.length > 1) {
-        const prefix = longestCommonPrefix(candidates.map((candidate) => candidate.toLowerCase()))
-        if (prefix) {
-          const resolved = sectionAliases.get(prefix) ?? prefix
-          setTerminalInput(`cd ${resolved}`)
-        }
-      }
-      return
-    }
-
-    if (command === 'cat' && (terminalContext.connectedTo === 'server' || terminalContext.connectedTo === 'shadow')) {
-      const currentDir = getDirectoryForPath(
-        activeFileSystem,
-        terminalContext.currentPath,
-      )
-
-      if (!currentDir) {
-        return
-      }
-
-      const fileCandidates = Object.entries(currentDir)
-        .filter(([, value]) => typeof value === 'string')
-        .map(([name]) => name)
-      const includeHidden = argPrefix.startsWith('.')
-      const candidates = fileCandidates.filter((fileName) =>
-        (includeHidden || !fileName.startsWith('.')) && fileName.startsWith(argPrefix),
-      )
-
-      if (candidates.length === 1) {
-        setTerminalInput(`cat ${candidates[0]}`)
-      } else if (candidates.length > 1) {
-        const prefix = longestCommonPrefix(candidates)
-        if (prefix) {
-          setTerminalInput(`cat ${prefix}`)
-        }
-      }
-    }
-  }, [knownNodeIps, pcNodes, terminalContext.connectedTo, terminalContext.currentPath, terminalContext.shadowDiscovered, terminalInput])
+    if (terminalRunningRef.current || terminalContext.pendingSSH) return
+    setTerminalInput(completeTerminalInput(terminalInput, terminalContext, terminalRuntime, serverFileSystem))
+  }, [terminalContext, terminalInput, terminalRuntime])
 
   const handleTerminalKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLInputElement>) => {
+      if (event.ctrlKey && event.key.toLowerCase() === 'c') {
+        event.preventDefault()
+        cancelTerminalCommand()
+        return
+      }
+      if (terminalRunningRef.current) {
+        event.preventDefault()
+        return
+      }
+      if (terminalContext.pendingSSH && event.key !== 'Enter') {
+        if (['Tab', 'ArrowUp', 'ArrowDown'].includes(event.key)) event.preventDefault()
+        return
+      }
       if (event.key === 'Enter') {
         event.preventDefault()
         handleTerminalSubmit()
@@ -1257,6 +996,8 @@ function App() {
       }
     },
     [
+      cancelTerminalCommand,
+      terminalContext.pendingSSH,
       commandHistory,
       handleAutocomplete,
       handleTerminalSubmit,
@@ -1354,6 +1095,7 @@ function App() {
 
   useEffect(
     () => () => {
+      terminalTimersRef.current.forEach(window.clearTimeout)
       if (packetAnimationTimeoutRef.current) {
         window.clearTimeout(packetAnimationTimeoutRef.current)
       }
@@ -1363,6 +1105,13 @@ function App() {
     },
     [],
   )
+
+  const reconciledContext = reconcileTerminalContext(terminalContext, terminalRuntime)
+  if (reconciledContext !== terminalContext) {
+    setTerminalContext(reconciledContext)
+    setTerminalInput('')
+    setTerminalLines(current => [...current, 'Connection lost: host or route disappeared. Returned to an available local/parent shell.'])
+  }
 
   if (
     activePanel?.type === 'camera' &&
@@ -1473,7 +1222,10 @@ function App() {
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
+            onEdgesChange={changes => {
+              if (terminalRunningRef.current) cancelTerminalCommand()
+              onEdgesChange(changes)
+            }}
             onConnect={handleConnect}
             onAddDeviceNode={handleAddDeviceNode}
           />
@@ -1484,6 +1236,9 @@ function App() {
             inputValue={terminalInput}
             prompt={buildPrompt(terminalContext)}
             isGlitching={terminalGlitchActive}
+            isRunning={terminalRunning}
+            isPassword={terminalContext.pendingSSH?.phase === 'password'}
+            onCancel={cancelTerminalCommand}
             resumeUrl={RESUME_URL}
             resumeDownloadName={RESUME_DOWNLOAD_NAME}
             onInputChange={handleTerminalInputChange}

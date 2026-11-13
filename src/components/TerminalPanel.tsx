@@ -5,6 +5,9 @@ type TerminalPanelProps = {
   inputValue: string
   prompt: string
   isGlitching: boolean
+  isRunning: boolean
+  isPassword: boolean
+  onCancel: () => void
   resumeUrl: string
   resumeDownloadName: string
   onInputChange: (value: string) => void
@@ -18,6 +21,9 @@ export function TerminalPanel({
   inputValue,
   prompt,
   isGlitching,
+  isRunning,
+  isPassword,
+  onCancel,
   resumeUrl,
   resumeDownloadName,
   onInputChange,
@@ -26,6 +32,11 @@ export function TerminalPanel({
   onRunSuggestedCommand,
 }: TerminalPanelProps) {
   const outputRef = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [prompt, isRunning])
 
   useEffect(() => {
     if (outputRef.current) {
@@ -35,8 +46,11 @@ export function TerminalPanel({
 
   return (
     <section className={`panel terminal-panel${isGlitching ? ' terminal-panel--glitch' : ''}`}>
-      <h3>Terminal</h3>
-      <div className="panel-body terminal-output" ref={outputRef}>
+      <h3 className="terminal-heading">
+        <span>Terminal <small>{isRunning ? 'Running…' : 'Simulated Linux shell'}</small></span>
+        <button type="button" className="terminal-suggestion-button" onClick={onCancel}>Cancel / Ctrl+C</button>
+      </h3>
+      <div className="panel-body terminal-output" ref={outputRef} role="log" aria-label="Terminal output" aria-live="polite">
         {lines.map((line, index) => (
           <div key={`${line}-${index}`} className="log-line">
             {line}
@@ -80,11 +94,16 @@ export function TerminalPanel({
         <span className="prompt">{prompt}</span>
         <input
           id="terminal-input"
-          type="text"
+          ref={inputRef}
+          type={isPassword ? "password" : "text"}
+          readOnly={isRunning}
+          aria-label={isPassword ? "SSH password" : "Terminal command or login response"}
+          autoCapitalize="none"
+          autoCorrect="off"
           value={inputValue}
           onChange={(event) => onInputChange(event.target.value)}
           onKeyDown={onKeyDown}
-          autoComplete="off"
+          autoComplete={isPassword ? "new-password" : "off"}
           spellCheck={false}
         />
       </label>
