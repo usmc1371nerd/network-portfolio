@@ -1,5 +1,6 @@
 import type { FileSystemNode } from '../data/serverFileSystem'
 import { RESUME_URL } from '../constants/resume'
+import { parseShell, expandWord, textCommand } from './shell'
 import { inspectSystem, listeningSockets, recordJournal, type JournalEntry } from './linuxSystem'
 
 export type TerminalSession = {
@@ -8,6 +9,7 @@ export type TerminalSession = {
   connectedIp: string | null
   currentPath: string[]
   user?: string
+  lastExitCode?: number
 }
 
 type PendingSSH = {
@@ -27,6 +29,7 @@ export type TerminalContext = TerminalSession & {
   knownHosts?: string[]
   pendingSSH?: PendingSSH
   journal?: JournalEntry[]
+  shellHistory?: string[]
 }
 
 export type TerminalResult = {
@@ -241,10 +244,73 @@ function scan(args: string[], context: TerminalContext, runtime: TerminalRuntime
   return { output, context, streamed: true, networkLogs: [discovery ? 'ICMP/ARP host discovery on reachable lab segment' : 'TCP service probes on reachable lab hosts'] }
 }
 
-export function processTerminalCommand(input: string, context: TerminalContext, fsRoot: Record<string, FileSystemNode>, runtime: TerminalRuntime): TerminalResult {
-  if (context.pendingSSH) return continueSSH(input, context, runtime)
-  const args = input.trim().match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map(arg => arg.replace(/^(["'])(.*)\1$/, '$2')) ?? []
-  const command = args.shift() ?? ''
+function environmentFor(context: TerminalContext): Record<string, string> {
+  return { USER: context.user ?? 'guest', HOSTNAME: context.connectedLabel?.toLowerCase() ?? 'lab', HOME: '/', PWD: `/${context.currentPath.join('/')}`, SHELL: '/bin/bash', PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin', '?': String(context.lastExitCode ?? 0) }
+}
+
+function commandStatus(result: TerminalResult): number {
+  if (result.exitCode !== undefined) return result.exitCode
+  const first = result.output[0] ?? ''
+  if (/^usage:|unsupported option|supports valid|supported options|expected at most/.test(first)) return 2
+  if (/command not found/.test(first)) return 127
+  if (/No such file|Not a directory|Is a directory|No route|unreachable|Connection refused|Connection timed out|resolve hostname|Permission denied|Host key verification failed|unavailable in this|No local console|^lab (?:connect|console):/.test(first)) return 1
+  return 0
+}
+
+export function processTerminalCommand(input: string, original: TerminalContext, fsRoot: Record<string, FileSystemNode>, runtime: TerminalRuntime): TerminalResult {
+  // Authentication replies bypass shell parsing, expansion and all history handling.
+  if (original.pendingSSH) {
+    const result = continueSSH(input, original, runtime)
+    return { ...result, context: { ...result.context, lastExitCode: commandStatus(result) } }
+  }
+  if (!input.trim()) return { output: [], context: original }
+  let context: TerminalContext = { ...original, shellHistory: [...(original.shellHistory ?? []), input.slice(0, 2048)].slice(-100) }
+  const plan = parseShell(input)
+  const reject = (message: string): TerminalResult => ({ output: [`bash: ${message}`], context: { ...context, lastExitCode: 2 }, exitCode: 2 })
+  if (plan.error !== undefined) return reject(plan.error)
+  const composed = plan.jobs.length > 1 || plan.jobs[0]?.stages.length > 1
+  // Resolve every command name before execution; expansion must not bypass restrictions.
+  const interactive = new Set(['ssh', 'exit', 'logout', 'connect', 'console', 'clear'])
+  for (const job of plan.jobs) for (const stage of job.stages) {
+    const name = expandWord(stage[0], environmentFor(context))
+    if (composed && interactive.has(name)) return reject('interactive and lab-control commands must run alone')
+    if (job.stages.length > 1 && name === 'cd') return reject('cd must run outside a pipeline')
+  }
+  const output: string[] = []
+  const networkLogs: string[] = []
+  let last: TerminalResult = { output: [], context }
+  for (const job of plan.jobs) {
+    if (job.condition === '&&' && context.lastExitCode !== 0) continue
+    if (job.condition === '||' && context.lastExitCode === 0) continue
+    const environment = environmentFor(context)
+    const stages = job.stages.map(stage => stage.map(word => expandWord(word, environment)))
+    let stdin: string[] | undefined
+    const errors: string[] = []
+    for (const tokens of stages) {
+      // Recheck after expansion using the current context, before any side effect.
+      if (composed && interactive.has(tokens[0])) return reject('interactive and lab-control commands must run alone')
+      last = executeSingle(tokens, context, fsRoot, runtime, stdin)
+      const status = commandStatus(last)
+      context = { ...last.context, lastExitCode: status }
+      networkLogs.push(...(last.networkLogs ?? []))
+      // Nonzero pgrep/grep and systemctl status can legitimately produce stdout.
+      const diagnostic = /^usage:|No such file|Is a directory|could not be found|Interactive authentication/.test(last.output[0] ?? '') || /No such file|Is a directory/.test(last.output[0] ?? '')
+      const hasErrorOutput = status !== 0 && (diagnostic || !['grep', 'pgrep', 'systemctl', 'false'].includes(tokens[0]))
+      if (hasErrorOutput || (status === 2 && ['grep', 'pgrep'].includes(tokens[0]))) {
+        errors.push(...last.output); stdin = []
+      } else stdin = last.output
+      if ((stdin?.length ?? 0) > 500 || errors.length > 100 || (stdin?.join('\n').length ?? 0) > 65536) {
+        return { output: ['bash: output exceeds the lab limit (500 lines / 64 KiB)'], context: { ...context, lastExitCode: 1 }, exitCode: 1 }
+      }
+    }
+    output.push(...errors, ...(stdin ?? []))
+    if (output.length > 500 || output.join('\n').length > 65536) return { output: ['bash: output exceeds the lab limit (500 lines / 64 KiB)'], context: { ...context, lastExitCode: 1 }, exitCode: 1 }
+  }
+  return { ...last, context, output, exitCode: context.lastExitCode ?? 0, networkLogs, ...(composed ? { openedFile: undefined, clear: undefined, packetEvent: undefined, streamed: false } : {}) }
+}
+
+function executeSingle(tokens: string[], context: TerminalContext, fsRoot: Record<string, FileSystemNode>, runtime: TerminalRuntime, stdin?: string[]): TerminalResult {
+  const [command = '', ...args] = tokens
   if (!command) return { output: [], context }
   if (command === 'clear') return { output: [], context, clear: true }
   if (command === 'resume') return { output: ['Resume download:', RESUME_URL, 'Use Grab Resume to download.'], context }
@@ -252,6 +318,10 @@ export function processTerminalCommand(input: string, context: TerminalContext, 
     output: [
       'Simulated Linux shell (no real commands or network traffic):',
       'ip addr | ip route | hostname | whoami | pwd',
+      'grep [-Finvc] <literal pattern> [path] | head/tail [-n count] [path] | wc [-lwc] [path]',
+      'echo <text> | history [count] | true | false',
+      'Pipes: ps aux | grep ssh; chains: command && next; command || fallback; command ; next',
+      'Quotes and $USER, $HOSTNAME, $HOME, $PWD, $? expansion are supported. No redirects or substitutions.',
       'uname [-a] | uptime | hostnamectl | id | groups',
       'ps aux | pgrep [-f] <name> | top -b -n 1 | ss -tuln',
       'systemctl status <unit> | systemctl --failed | journalctl -u <unit> [-n count]',
@@ -283,6 +353,39 @@ export function processTerminalCommand(input: string, context: TerminalContext, 
   if (!context.connectedTo) return { output: ['No local console. Add a PC/laptop, or use console <workstation>.'], context }
   const inspection = inspectSystem(command, args, context, runtime)
   if (inspection) return { ...inspection, context }
+  if (command === 'true' || command === 'false') return { output: [], context, exitCode: command === 'true' ? 0 : 1 }
+  if (command === 'echo') return { output: [args.join(' ')], context }
+  if (command === 'history') {
+    if (args.length > 1 || (args[0] && (!/^\d+$/.test(args[0]) || Number(args[0]) > 100))) return { output: ['usage: history [0..100]'], context, exitCode: 2 }
+    const history = context.shellHistory ?? []
+    const count = args.length ? Number(args[0]) : history.length
+    return { output: count ? history.slice(-count).map((line, index) => `${String(history.length - Math.min(count, history.length) + index + 1).padStart(4)}  ${line}`) : [], context }
+  }
+  if (['grep', 'head', 'tail', 'wc'].includes(command)) {
+    let pathIndex = args.length
+    if (command === 'grep') {
+      let index = 0
+      while (args[index]?.startsWith('-') && args[index] !== '--') index++
+      if (args[index] === '--') index++
+      pathIndex = index + 1
+    } else if (command === 'head' || command === 'tail') pathIndex = args[0] === '-n' ? 2 : 0
+    else { pathIndex = args.findIndex(arg => !arg.startsWith('-')); if (pathIndex < 0) pathIndex = args.length }
+    let source = stdin
+    const options = args.slice(0, pathIndex)
+    if (args.length > pathIndex) {
+      if (args.length !== pathIndex + 1) return { output: [`${command}: expected at most one file`], context, exitCode: 2 }
+      const root = context.connectedTo === 'shadow' ? shadowFileSystem : context.connectedTo === 'server' ? fsRoot : localFileSystem
+      const raw = args[pathIndex]
+      const node = getAtPath(root, normalizePath(raw, context.currentPath))
+      if (node === undefined) return { output: [`${command}: ${raw}: No such file or directory`], context, exitCode: 1 }
+      if (typeof node !== 'string') return { output: [`${command}: ${raw}: Is a directory`], context, exitCode: 1 }
+      source = node.length ? node.replace(/\n$/, '').split('\n') : []
+      const result = textCommand(command, options, source)!
+      return { ...result, context }
+    }
+    return { ...textCommand(command, options, source)!, context }
+  }
+  if (command === 'cat' && !args.length && stdin !== undefined) return { output: stdin, context }
   if (command === 'whoami') return { output: [context.user ?? 'guest'], context }
   if (command === 'hostname') return { output: [context.connectedLabel!.toLowerCase()], context }
   if (command === 'pwd') return { output: [`/${context.currentPath.join('/')}`], context }
@@ -359,7 +462,7 @@ export function processTerminalCommand(input: string, context: TerminalContext, 
     return { output: node.split('\n'), context: { ...context, shadowDiscovered: context.shadowDiscovered || (context.connectedTo === 'server' && path.join('/') === '.secretfile') }, openedFile: { path: path.join('/'), content: node } }
   }
   if (['sudo', 'rm', 'reboot', 'shutdown', 'passwd', 'curl', 'wget', 'nc'].includes(command)) return { output: [`${command}: unavailable in this read-only simulated shell`], context }
-  return { output: `bash: ${command}: command not found`.split('\n'), context }
+  return { output: [`bash: ${command}: command not found`], context, exitCode: 127 }
 }
 
 // Revalidate the entire SSH chain when devices or cables change, including parent shells.
@@ -397,7 +500,7 @@ export function reconcileTerminalContext(context: TerminalContext, runtime: Term
 
 export function completeTerminalInput(input: string, context: TerminalContext, runtime: TerminalRuntime, fsRoot: Record<string, FileSystemNode>): string {
   if (context.pendingSSH) return input
-  const commands = ['uname', 'uptime', 'hostnamectl', 'id', 'groups', 'ps', 'pgrep', 'top', 'ss', 'systemctl', 'journalctl', 'help', 'ip', 'hostname', 'pwd', 'ping', 'ssh', 'connect', 'console', 'nmap', 'whoami', 'resume', 'ls', 'cd', 'cat', 'clear', 'exit', 'logout']
+  const commands = ['echo', 'history', 'grep', 'head', 'tail', 'wc', 'true', 'false', 'uname', 'uptime', 'hostnamectl', 'id', 'groups', 'ps', 'pgrep', 'top', 'ss', 'systemctl', 'journalctl', 'help', 'ip', 'hostname', 'pwd', 'ping', 'ssh', 'connect', 'console', 'nmap', 'whoami', 'resume', 'ls', 'cd', 'cat', 'clear', 'exit', 'logout']
   const parts = input.trimStart().split(/\s+/)
   const command = parts[0]
   const token = parts.at(-1) ?? ''

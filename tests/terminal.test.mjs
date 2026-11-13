@@ -10,7 +10,7 @@ function moduleURL(path, replacements = {}) {
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2023 } })
   return `data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`
 }
-const imports = { '../constants/resume': moduleURL('src/constants/resume.ts'), './linuxSystem': moduleURL('src/utils/linuxSystem.ts') }
+const imports = { '../constants/resume': moduleURL('src/constants/resume.ts'), './linuxSystem': moduleURL('src/utils/linuxSystem.ts'), './shell': moduleURL('src/utils/shell.ts') }
 const { processTerminalCommand: process, reconcileTerminalContext: reconcile, buildPrompt, initialTerminalLines, completeTerminalInput: complete } = await import(moduleURL('src/utils/terminal.ts', imports))
 const { serverFileSystem } = await import(moduleURL('src/data/serverFileSystem.ts', imports))
 function runtime(linked = ['10.0.0.10', '10.0.0.12', '10.0.0.13']) {
@@ -215,7 +215,7 @@ test('service status, process inspection, listening sockets and scans share the 
   assert.equal(run('systemctl restart ssh', server).exitCode, 1)
   assert.match(run('journalctl -u backup-agent -p err', server).output.join('\n'), /not mounted/)
   assert.equal(run('pgrep missing-process', server).exitCode, 1)
-  assert.equal(run('top -b -n 1', server).exitCode, undefined)
+  assert.equal(run('top -b -n 1', server).exitCode, 0)
   assert.equal(run('top', server).exitCode, 2)
   assert.equal(run('journalctl -n 999999', server).exitCode, 2)
   assert.deepEqual(run('journalctl -n 0', server).output, [])
@@ -234,4 +234,83 @@ test('authentication journal records actual attempts per host without passwords 
   assert.match(run('uname -a', server).output[0], /Linux jp-server.*simulated/)
   assert.match(run('id', server).output[0], /uid=1000\(guest\)/)
   assert.equal(run('uname --bogus', server).exitCode, 2)
+})
+
+test('pipelines filter real command output and preserve the last stage status', () => {
+  const server = login(local())
+  assert.match(run('ps aux | grep sshd', server).output.join('\n'), /612.*sshd/)
+  assert.deepEqual(run('ps aux | grep missing', server).output, [])
+  assert.equal(run('ps aux | grep missing', server).context.lastExitCode, 1)
+  assert.deepEqual(run('ps aux | grep sshd | wc -l', server).output, ['1'])
+  assert.deepEqual(run('systemctl --failed | grep backup | head -n 1', server).output.length, 1)
+  assert.deepEqual(run('echo hello | cat', server).output, ['hello'])
+  assert.match(run('missing-program | wc -l', server).output.join('\n'), /command not found.*0/s)
+  assert.equal(run('missing-program | wc -l', server).exitCode, 0)
+})
+
+test('conditional chains and exit status reflect both successful and failed commands', () => {
+  assert.deepEqual(run('false && echo wrong || echo fallback').output, ['fallback'])
+  assert.deepEqual(run('true || echo wrong; echo done').output, ['done'])
+  assert.deepEqual(run('false; echo $?').output, ['1'])
+  assert.equal(run('missing-command').exitCode, 127)
+  assert.deepEqual(run('missing-command; echo $?').output.at(-1), '127')
+  const server = login(local())
+  assert.deepEqual(run('cd /projects && pwd', server).output, ['/projects'])
+  assert.match(run('cd /missing && pwd || echo failed', server).output.join('\n'), /No such file.*failed/s)
+  assert.equal(run('cd /missing', server).exitCode, 1)
+})
+
+test('quoting and expansion handle literal shell metacharacters without executing code', () => {
+  assert.deepEqual(run('echo "$USER@$HOSTNAME"').output, ['guest@pc-1'])
+  assert.deepEqual(run("echo '$USER; $(uname) | literal'").output, ['$USER; $(uname) | literal'])
+  assert.deepEqual(run('echo hello\\ world').output, ['hello world'])
+  assert.deepEqual(run('echo ""').output, [''])
+  assert.equal(run('echo $(uname)').exitCode, 2)
+  assert.equal(run('echo `uname`').exitCode, 2)
+  assert.equal(run('echo "unfinished').exitCode, 2)
+  assert.equal(run('echo hello > /tmp/file').exitCode, 2)
+  assert.equal(run('echo hi &').exitCode, 2)
+  assert.equal(run('echo hi |').exitCode, 2)
+  assert.equal(run('echo hi && ssh server').context.pendingSSH, undefined)
+  assert.equal(run('echo hi | cd /').exitCode, 2)
+  assert.equal(run('echo '+ 'x'.repeat(3000)).exitCode, 2)
+  assert.equal(run('echo a'+ ' | cat'.repeat(9)).exitCode, 2)
+})
+
+test('text utilities support bounded counts, literal matching and file input', () => {
+  const server = login(local())
+  assert.match(run('grep -in cybersecurity /about/summary.txt', server).output[0], /^1:/)
+  assert.equal(run('grep -c absent /about/summary.txt', server).exitCode, 1)
+  assert.deepEqual(run('echo AbC | grep -i abc').output, ['AbC'])
+  assert.deepEqual(run('echo aaa | grep "(a+)+$"').output, [])
+  assert.equal(run('echo a | grep -E ".*"').exitCode, 2)
+  assert.deepEqual(run('cat /projects/network-lab.txt | head -n 1', server).output.length, 1)
+  assert.deepEqual(run('tail -n 0 /projects/network-lab.txt', server).output, [])
+  assert.equal(run('head -n 100000 /projects/network-lab.txt', server).exitCode, 2)
+  assert.equal(run('grep word /missing', server).exitCode, 1)
+  assert.match(run('wc -l /projects/network-lab.txt', server).output[0], /^3$/)
+})
+
+test('password replies bypass shell expansion/history and cannot inject chained commands', () => {
+  const ready = run('yes', run('ssh server').context).context
+  const before = ready.shellHistory
+  const result = run('portfolio; echo hacked', ready)
+  assert.equal(result.context.connectedTo, 'pc')
+  assert.deepEqual(result.context.shellHistory, before)
+  assert.doesNotMatch(JSON.stringify(result.context.journal), /hacked|portfolio/)
+  const server = run('portfolio', ready).context
+  const history = run('history', server).output.join('\n')
+  assert.match(history, /ssh server/)
+  assert.doesNotMatch(history, /portfolio|hacked/)
+})
+
+test('file errors remain diagnostics rather than becoming pipeline input', () => {
+  const server = login(local())
+  const result = run('grep word /missing | wc -l', server)
+  assert.match(result.output.join('\n'), /No such file/)
+  assert.equal(result.output.at(-1), '0')
+  assert.equal(result.exitCode, 0)
+  const state = run('systemctl status missing | wc -l', server)
+  assert.match(state.output.join('\n'), /could not be found/)
+  assert.equal(state.output.at(-1), '0')
 })

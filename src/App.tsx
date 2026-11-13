@@ -289,7 +289,7 @@ function App() {
     setTerminalInput('')
     setHistoryCursor(null)
     setHistoryDraftInput('')
-    setTerminalContext(current => ({ ...current, pendingSSH: undefined }))
+    setTerminalContext(current => ({ ...current, pendingSSH: undefined, lastExitCode: 130 }))
     const ping = pingProgressRef.current
     pingProgressRef.current = null
     setTerminalLines(current => [...current, '^C', ...(ping ? [
