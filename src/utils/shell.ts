@@ -114,6 +114,48 @@ export function textCommand(command: string, args: string[], stdin?: string[]): 
     if (stdin === undefined) return bad(`${command} [-n 0..200] [path]`)
     return { output: !count ? [] : command === 'head' ? stdin.slice(0, count) : stdin.slice(-count), exitCode: 0 }
   }
+  if (command === 'sort') {
+    if (stdin === undefined || args.some(arg => !/^-[nru]+$/.test(arg))) return bad('sort [-nru] [path]')
+    const flags = args.join('')
+    const compareText = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0
+    let lines = [...stdin].sort((a, b) => {
+      const numeric = flags.includes('n') ? (Number.parseFloat(a) || 0) - (Number.parseFloat(b) || 0) : 0
+      return (numeric || compareText(a, b)) * (flags.includes('r') ? -1 : 1)
+    })
+    if (flags.includes('u')) lines = lines.filter((line, index) => !index || line !== lines[index - 1])
+    return { output: lines, exitCode: 0 }
+  }
+  if (command === 'uniq') {
+    if (stdin === undefined || args.some(arg => !/^-[cdu]+$/.test(arg))) return bad('uniq [-cdu] [path]')
+    const flags = args.join('')
+    if (flags.includes('d') && flags.includes('u')) return bad('uniq [-c] [-d|-u] [path]')
+    const groups: { line: string; count: number }[] = []
+    for (const line of stdin) {
+      const previous = groups.at(-1)
+      if (previous?.line === line) previous.count++
+      else groups.push({ line, count: 1 })
+    }
+    return { output: groups.filter(group => flags.includes('d') ? group.count > 1 : flags.includes('u') ? group.count === 1 : true).map(group => flags.includes('c') ? `${String(group.count).padStart(7)} ${group.line}` : group.line), exitCode: 0 }
+  }
+  if (command === 'cut') {
+    let delimiter = '\t'
+    let fields: number[] | undefined
+    for (let index = 0; index < args.length; index++) {
+      const option = args[index]
+      const value = args[++index]
+      if (option === '-d' && value?.length === 1) delimiter = value
+      else if (option === '-f' && value?.length <= 128 && /^\d+(,\d+)*$/.test(value)) {
+        fields = [...new Set(value.split(',').map(Number))].sort((a, b) => a - b)
+        if (fields.length > 16 || fields.some(field => field < 1 || field > 64)) return bad('cut [-d delimiter] -f 1..64[,field...] [path]')
+      } else return bad('cut [-d delimiter] -f fields [path]')
+    }
+    if (!fields || stdin === undefined) return bad('cut [-d delimiter] -f fields [path]')
+    return { output: stdin.map(line => {
+      if (!line.includes(delimiter)) return line
+      const values = line.split(delimiter)
+      return fields!.filter(field => field <= values.length).map(field => values[field - 1]).join(delimiter)
+    }), exitCode: 0 }
+  }
   if (command === 'wc') {
     if (args.some(arg => !/^-[lwc]+$/.test(arg)) || stdin === undefined) return bad('wc [-lwc] [path]')
     const flags = args.join('') || '-lwc'

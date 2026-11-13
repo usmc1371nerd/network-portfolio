@@ -29,10 +29,11 @@ export type TerminalContext = TerminalSession & {
   onboardingStep: 'drop-pc-1' | 'connect-pc-1' | 'ssh-pc-1' | 'ssh-server' | 'done'
   shadowDiscovered: boolean
   sessions?: TerminalSession[]
-  knownHosts?: string[]
+  knownHostsByHost?: Record<string, string[]>
   pendingSSH?: PendingSSH
   journal?: JournalEntry[]
   shellHistory?: string[]
+  historiesByHost?: Record<string, string[]>
   neighbors?: Record<string, string[]>
 }
 
@@ -161,7 +162,7 @@ function continueSSH(input: string, context: TerminalContext, runtime: TerminalR
     if (input.toLowerCase() !== 'yes') return { output: ['Please type yes or no.'], context }
     return {
       output: [`Warning: Permanently added '${target.label.toLowerCase()}' (ED25519) to the list of known hosts.`],
-      context: { ...context, knownHosts: [...(context.knownHosts ?? []), target.ip], pendingSSH: { ...pending, phase: 'password' } },
+      context: { ...context, knownHostsByHost: { ...(context.knownHostsByHost ?? {}), [hostKey(context)]: [...new Set([...(context.knownHostsByHost?.[hostKey(context)] ?? []), target.ip])].slice(-100) }, pendingSSH: { ...pending, phase: 'password' } },
     }
   }
   const expectedUser = target.kind === 'shadow' ? 'shadow' : 'guest'
@@ -239,6 +240,16 @@ function scan(args: string[], context: TerminalContext, runtime: TerminalRuntime
   return { output, context, streamed: true, networkLogs: [discovery ? 'ICMP/ARP host discovery on reachable lab segment' : 'TCP service probes on reachable lab hosts'] }
 }
 
+function hostKey(context: TerminalContext): string {
+  return `${context.user ?? 'guest'}@${context.connectedIp ?? 'console'}`
+}
+
+function syncHostHistory(context: TerminalContext): TerminalContext {
+  const history = context.historiesByHost?.[hostKey(context)]
+  if (history === context.shellHistory) return context
+  return { ...context, shellHistory: history }
+}
+
 function environmentFor(context: TerminalContext): Record<string, string> {
   return { USER: context.user ?? 'guest', HOSTNAME: context.connectedLabel?.toLowerCase() ?? 'lab', HOME: `/home/${context.user ?? 'guest'}`, OLDPWD: context.previousPath ? `/${context.previousPath.join('/')}` : '', PWD: `/${context.currentPath.join('/')}`, SHELL: '/bin/bash', PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin', '?': String(context.lastExitCode ?? 0) }
 }
@@ -256,10 +267,11 @@ export function processTerminalCommand(input: string, original: TerminalContext,
   // Authentication replies bypass shell parsing, expansion and all history handling.
   if (original.pendingSSH) {
     const result = continueSSH(input, original, runtime)
-    return { ...result, context: { ...result.context, lastExitCode: commandStatus(result) } }
+    return { ...result, context: syncHostHistory({ ...result.context, lastExitCode: commandStatus(result) }) }
   }
   if (!input.trim()) return { output: [], context: original }
-  let context: TerminalContext = { ...original, shellHistory: [...(original.shellHistory ?? []), input.slice(0, 2048)].slice(-100) }
+  const history = [...(original.historiesByHost?.[hostKey(original)] ?? original.shellHistory ?? []), input.slice(0, 2048)].slice(-100)
+  let context: TerminalContext = { ...original, shellHistory: history, historiesByHost: { ...(original.historiesByHost ?? {}), [hostKey(original)]: history } }
   const plan = parseShell(input)
   const reject = (message: string): TerminalResult => ({ output: [`bash: ${message}`], context: { ...context, lastExitCode: 2 }, exitCode: 2 })
   if (plan.error !== undefined) return reject(plan.error)
@@ -309,7 +321,7 @@ export function processTerminalCommand(input: string, original: TerminalContext,
     output.push(...errors, ...(stdin ?? []))
     if (output.length > 500 || output.join('\n').length > 65536) return { output: ['bash: output exceeds the lab limit (500 lines / 64 KiB)'], context: { ...context, lastExitCode: 1 }, exitCode: 1 }
   }
-  return { ...last, context, output, exitCode: context.lastExitCode ?? 0, networkLogs, diagnostics: undefined, ...(composed ? { openedFile: undefined, clear: undefined, packetEvent: undefined, streamed: false } : {}) }
+  return { ...last, context: syncHostHistory(context), output, exitCode: context.lastExitCode ?? 0, networkLogs, diagnostics: undefined, ...(composed ? { openedFile: undefined, clear: undefined, packetEvent: undefined, streamed: false } : {}) }
 }
 
 function executeSingle(tokens: string[], context: TerminalContext, fsRoot: Record<string, FileSystemNode>, runtime: TerminalRuntime, stdin?: string[]): TerminalResult {
@@ -325,6 +337,7 @@ function executeSingle(tokens: string[], context: TerminalContext, fsRoot: Recor
       'df -h | du -sh [path] | lsblk | free -h | env | printenv [name]',
       'which <command> | command -v <command> | man <command> | <command> --help',
       'grep [-Finvc] <literal pattern> [path] | head/tail [-n count] [path] | wc [-lwc] [path]',
+      'sort [-nru] [path] | uniq [-cdu] [path] | cut [-d delimiter] -f fields [path]',
       'echo <text> | history [count] | true | false',
       'Pipes: ps aux | grep ssh; chains: command && next; command || fallback; command ; next',
       'Quotes and $USER, $HOSTNAME, $HOME, $PWD, $? expansion are supported. No redirects or substitutions.',
@@ -409,7 +422,7 @@ function executeSingle(tokens: string[], context: TerminalContext, fsRoot: Recor
     const count = args.length ? Number(args[0]) : history.length
     return { output: count ? history.slice(-count).map((line, index) => `${String(history.length - Math.min(count, history.length) + index + 1).padStart(4)}  ${line}`) : [], context }
   }
-  if (['grep', 'head', 'tail', 'wc'].includes(command)) {
+  if (['grep', 'head', 'tail', 'wc', 'sort', 'uniq', 'cut'].includes(command)) {
     let pathIndex = args.length
     if (command === 'grep') {
       let index = 0
@@ -417,6 +430,10 @@ function executeSingle(tokens: string[], context: TerminalContext, fsRoot: Recor
       if (args[index] === '--') index++
       pathIndex = index + 1
     } else if (command === 'head' || command === 'tail') pathIndex = args[0] === '-n' ? 2 : 0
+    else if (command === 'cut') {
+      pathIndex = 0
+      while (pathIndex < args.length && ['-d', '-f'].includes(args[pathIndex])) pathIndex += 2
+    }
     else { pathIndex = args.findIndex(arg => !arg.startsWith('-')); if (pathIndex < 0) pathIndex = args.length }
     let source = stdin
     const options = args.slice(0, pathIndex)
@@ -429,6 +446,7 @@ function executeSingle(tokens: string[], context: TerminalContext, fsRoot: Recor
       if (node === undefined) return { output: [`${command}: ${raw}: No such file or directory`], context, exitCode: 1 }
       if (typeof node !== 'string') return { output: [`${command}: ${raw}: Is a directory`], context, exitCode: 1 }
       source = node.length ? node.replace(/\n$/, '').split('\n') : []
+      if (source.length > 500 || node.length > 65536) return { output: ['input exceeds the lab limit (500 lines / 64 KiB)'], context, exitCode: 1 }
       const result = textCommand(command, options, source)!
       return { ...result, context: path.join('/') === '.secretfile' && result.output.length && command !== 'wc' ? { ...context, shadowDiscovered: true } : context }
     }
@@ -486,7 +504,7 @@ function executeSingle(tokens: string[], context: TerminalContext, fsRoot: Recor
     if (error || !target) return { output: [`ssh: ${targetText}: ${error ?? 'No route to host'}`], context, streamed: true }
     if (!sshAllowed(target, context)) return { output: [`ssh: connect to host ${target.ip} port 22: Connection timed out`, 'Lab firewall: restricted SSH accepts workstation sources only.'], context, streamed: true, networkLogs: [`Firewall dropped TCP/22 from ${context.connectedIp} to ${target.ip}`] }
     if (!hasSSH(target, runtime)) return { output: [`ssh: connect to host ${target.ip} port 22: Connection refused`], context, streamed: true, networkLogs: [`TCP/22 RST from ${target.ip}; SSH service not listening`] }
-    const known = context.knownHosts?.includes(target.ip)
+    const known = context.knownHostsByHost?.[hostKey(context)]?.includes(target.ip)
     return {
       output: known ? ['SSH password authentication required.'] : [`The authenticity of host '${target.label.toLowerCase()} (${target.ip})' can't be established.`, 'ED25519 host key fingerprint: SIMULATED-LAB-KEY (not a real cryptographic key).'],
       context: { ...context, pendingSSH: { target, user, phase: known ? 'password' : 'host-key', attempts: 0 } },
@@ -548,15 +566,15 @@ export function reconcileTerminalContext(context: TerminalContext, runtime: Term
   }
   if (validCount) {
     const previous = chain[validCount - 1]
-    return { ...context, ...previous, sessions: chain.slice(0, validCount - 1), pendingSSH: undefined }
+    return syncHostHistory({ ...context, ...previous, sessions: chain.slice(0, validCount - 1), pendingSSH: undefined })
   }
   const fallback = Array.from(runtime.pcNodes).find(([ip]) => ['pc', 'laptop'].includes(runtime.deviceKinds.get(ip) ?? ''))
-  return {
+  return syncHostHistory({
     ...context, connected: Boolean(fallback), connectedTo: fallback ? 'pc' : null,
     connectedIp: fallback?.[0] ?? null, connectedLabel: fallback?.[1] ?? null,
     lastPcIp: fallback?.[0] ?? null, lastPcLabel: fallback?.[1] ?? null,
     user: 'guest', currentPath: [], previousPath: undefined, sessions: [], pendingSSH: undefined,
-  }
+  })
 }
 
 export function completeTerminalInput(input: string, context: TerminalContext, runtime: TerminalRuntime, fsRoot: Record<string, FileSystemNode>): string {
@@ -594,7 +612,7 @@ export function completeTerminalInput(input: string, context: TerminalContext, r
   } else if (command === 'systemctl' || command === 'journalctl') {
     if (command === 'systemctl' && parts.length === 2) candidates = ['status', 'is-active', 'list-units', '--failed'].filter(value => value.startsWith(token))
     else if (command === 'systemctl' || parts.at(-2) === '-u') candidates = servicesForHost(context.connectedIp ?? '', runtime).map(service => service.name).filter(value => value.startsWith(token))
-  } else if (['cd', 'cat', 'ls', 'file', 'stat', 'du', 'head', 'tail', 'wc', 'find', 'grep'].includes(command)) {
+  } else if (['cd', 'cat', 'ls', 'file', 'stat', 'du', 'head', 'tail', 'wc', 'find', 'grep', 'sort', 'uniq', 'cut'].includes(command)) {
     if (token.startsWith('-') || ['-n', '-name', '-type', '-maxdepth'].includes(parts.at(-2) ?? '')) return input
     if (command === 'grep') {
       const previous = parts.slice(1, -1).filter(arg => !arg.startsWith('-'))

@@ -255,10 +255,6 @@ function boundedLog(current: string[], update: SetStateAction<string[]>): string
   return (typeof update === 'function' ? update(current) : update).slice(-1000)
 }
 
-function boundedHistory(current: string[], update: SetStateAction<string[]>): string[] {
-  return (typeof update === 'function' ? update(current) : update).slice(-100)
-}
-
 function App() {
   const navigate = useNavigate()
   const [isMobileDevice, setIsMobileDevice] = useState(false)
@@ -275,7 +271,6 @@ function App() {
   const terminalRunningRef = useRef(false)
   const pingProgressRef = useRef<{ target: string; received: number } | null>(null)
 
-  const [commandHistory, setCommandHistory] = useReducer(boundedHistory, [])
   const [historyCursor, setHistoryCursor] = useState<number | null>(null)
   const [historyDraftInput, setHistoryDraftInput] = useState('')
   const [terminalContext, setTerminalContext] = useState<TerminalContext>({
@@ -289,6 +284,8 @@ function App() {
     onboardingStep: 'drop-pc-1',
     shadowDiscovered: false,
   })
+  const commandHistory = useMemo(() => terminalContext.shellHistory ?? [], [terminalContext.shellHistory])
+
   const cancelTerminalCommand = useCallback(() => {
     terminalTimersRef.current.forEach(window.clearTimeout)
     terminalTimersRef.current = []
@@ -806,7 +803,6 @@ function App() {
       return
     }
 
-    if (!terminalContext.pendingSSH) setCommandHistory((currentHistory) => [...currentHistory, command])
     setHistoryCursor(null)
     setHistoryDraftInput('')
     setTerminalGlitchActive(false)

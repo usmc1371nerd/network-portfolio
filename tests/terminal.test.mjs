@@ -300,8 +300,8 @@ test('password replies bypass shell expansion/history and cannot inject chained 
   assert.doesNotMatch(JSON.stringify(result.context.journal), /hacked|portfolio/)
   const server = run('portfolio', ready).context
   const history = run('history', server).output.join('\n')
-  assert.match(history, /ssh server/)
-  assert.doesNotMatch(history, /portfolio|hacked/)
+  assert.doesNotMatch(history, /ssh server|portfolio|hacked/)
+  assert.match(run('history', run('exit', server).context).output.join('\n'), /ssh server/)
 })
 
 test('file errors remain diagnostics rather than becoming pipeline input', () => {
@@ -431,4 +431,51 @@ test('history, journals, command input and output stay bounded under repeated or
   assert.match(oversized.output[0], /output exceeds/)
   assert.equal(run('echo a\u0000b').exitCode, 2)
   assert.equal(run(`find / -name '${'*'.repeat(129)}'`, server).exitCode, 2)
+})
+
+test('SSH trust and command history are isolated by source host and user', () => {
+  const server = login(local())
+  assert.doesNotMatch(run('history', server).output.join('\n'), /ssh guest@server/)
+  const serverWithCommand = run('uname -a', server).context
+  const pc = run('exit', serverWithCommand).context
+  assert.match(run('history', pc).output.join('\n'), /ssh guest@server/)
+  assert.doesNotMatch(run('history', pc).output.join('\n'), /uname -a/)
+  assert.equal(run('ssh server', pc).context.pendingSSH.phase, 'password')
+  const otherPc = run('console pc-2', pc).context
+  const network = runtime(['10.0.0.10', '10.0.0.11'])
+  assert.equal(run('ssh server', otherPc, network).context.pendingSSH.phase, 'host-key')
+  assert.doesNotMatch(run('history', otherPc, network).output.join('\n'), /uname -a|ssh guest@server/)
+  const serverAgain = login(pc)
+  assert.match(run('history', serverAgain).output.join('\n'), /uname -a/)
+  assert.doesNotMatch(JSON.stringify(serverAgain.historiesByHost), /portfolio/)
+})
+
+test('log-analysis pipelines select fields, sort and count adjacent groups', () => {
+  const pending = run('yes', run('ssh server').context).context
+  const rejected = run('incorrect', pending).context
+  const server = run('portfolio', rejected).context
+  const result = run("grep 'Failed password' /var/log/auth.log | cut -d ' ' -f 6 | sort | uniq -c", server)
+  assert.equal(result.exitCode, 0)
+  assert.match(result.output[0], /1 guest/)
+  assert.deepEqual(run('ls /projects | sort -r | head -n 1', server).output.length, 1)
+  assert.equal(run('echo 10 | sort -n').output[0], '10')
+  assert.deepEqual(run('echo a | uniq -d').output, [])
+  assert.match(run('echo a | uniq -c').output[0], /1 a/)
+  assert.deepEqual(run("echo 'a:b:c' | cut -d : -f 3,1").output, ['a:c'])
+  assert.equal(run('echo a | cut -f 0').exitCode, 2)
+  assert.equal(run('echo a | cut -f 999999').exitCode, 2)
+  assert.equal(run('echo a | sort --random-sort').exitCode, 2)
+  assert.equal(run('echo a | uniq -du').exitCode, 2)
+  assert.match(run('sort /etc/shadow', server).output.join('\n'), /Permission denied/)
+  assert.equal(run('cut -d : -f 1 /etc/passwd', server).output[1], 'guest')
+})
+
+test('analysis tools sort numerically, preserve adjacent grouping and select tab fields', () => {
+  const server = login(local())
+  const fixture = { numbers: '10\n2\n2\n-1', groups: 'a\na\nb\na', tabs: 'one\ttwo\tthree' }
+  assert.deepEqual(process('sort -n /numbers', server, fixture, runtime()).output, ['-1', '2', '2', '10'])
+  assert.deepEqual(process('sort -nru /numbers', server, fixture, runtime()).output, ['10', '2', '-1'])
+  assert.deepEqual(process('uniq -c /groups', server, fixture, runtime()).output.map(line => line.trim()), ['2 a', '1 b', '1 a'])
+  assert.deepEqual(process('cut -f 2 /tabs', server, fixture, runtime()).output, ['two'])
+  assert.deepEqual(process('sort /groups | uniq -c', server, fixture, runtime()).output.map(line => line.trim()), ['3 a', '1 b'])
 })
