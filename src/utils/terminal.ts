@@ -1,7 +1,9 @@
 import type { FileSystemNode } from '../data/serverFileSystem'
 import { RESUME_URL } from '../constants/resume'
+import { systemFileSystem, normalizePath, nodeAtPath as getAtPath, accessDenied, metadata, inspectFiles } from './virtualFs'
+import { COMMAND_HELP, COMMAND_NAMES, BUILTINS } from './commandHelp'
 import { parseShell, expandWord, textCommand } from './shell'
-import { inspectSystem, listeningSockets, recordJournal, type JournalEntry } from './linuxSystem'
+import { inspectSystem, servicesForHost, listeningSockets, recordJournal, type JournalEntry } from './linuxSystem'
 
 export type TerminalSession = {
   connectedTo: 'server' | 'pc' | 'shadow' | null
@@ -10,6 +12,7 @@ export type TerminalSession = {
   currentPath: string[]
   user?: string
   lastExitCode?: number
+  previousPath?: string[]
 }
 
 type PendingSSH = {
@@ -30,6 +33,7 @@ export type TerminalContext = TerminalSession & {
   pendingSSH?: PendingSSH
   journal?: JournalEntry[]
   shellHistory?: string[]
+  neighbors?: Record<string, string[]>
 }
 
 export type TerminalResult = {
@@ -43,6 +47,7 @@ export type TerminalResult = {
   networkLogs?: string[]
   streamed?: boolean
   exitCode?: number
+  diagnostics?: string[]
 }
 
 export type TerminalRuntime = {
@@ -82,7 +87,7 @@ export const initialTerminalLines = [
 ]
 
 function resolveTarget(value: string, runtime: TerminalRuntime): ResolvedTarget | null {
-  const target = value.toLowerCase()
+  const target = value.toLowerCase().replace(/\.lab$/, '')
   if (['server', runtime.serverLabel.toLowerCase(), runtime.serverIp].includes(target)) {
     return { ip: runtime.serverIp, label: runtime.serverLabel, kind: 'server' }
   }
@@ -132,6 +137,7 @@ function snapshot(context: TerminalContext): TerminalSession {
   return {
     connectedTo: context.connectedTo, connectedLabel: context.connectedLabel,
     connectedIp: context.connectedIp, currentPath: [...context.currentPath], user: context.user ?? 'guest',
+    lastExitCode: context.lastExitCode, previousPath: context.previousPath ? [...context.previousPath] : undefined,
   }
 }
 
@@ -171,7 +177,7 @@ function continueSSH(input: string, context: TerminalContext, runtime: TerminalR
     output: [`Authenticated to ${target.label.toLowerCase()} (${target.ip}) using password.`, 'Welcome to the simulated lab. Type ls to explore; exit returns to your previous shell.'],
     context: {
       ...recordJournal(context, target.ip, 'ssh', `Accepted password for ${user} from ${context.connectedIp} port 52000 ssh2`), connected: true, connectedTo: target.kind, connectedLabel: target.label,
-      connectedIp: target.ip, user, currentPath: [], pendingSSH: undefined,
+      connectedIp: target.ip, user, currentPath: [], previousPath: undefined, pendingSSH: undefined,
       sessions: [...(context.sessions ?? []), snapshot(context)],
       lastPcIp: context.connectedTo === 'pc' ? context.connectedIp : context.lastPcIp,
       lastPcLabel: context.connectedTo === 'pc' ? context.connectedLabel : context.lastPcLabel,
@@ -181,30 +187,19 @@ function continueSSH(input: string, context: TerminalContext, runtime: TerminalR
   }
 }
 
-function normalizePath(raw: string, current: string[]): string[] {
-  const parts = raw.startsWith('/') || raw.startsWith('~') ? [] : [...current]
-  for (const part of raw.replace(/^~(?=\/|$)/, '').split('/')) {
-    if (!part || part === '.') continue
-    if (part === '..') parts.pop()
-    else parts.push(part)
-  }
-  return parts
+function fileSystemFor(context: TerminalContext, fsRoot: Record<string, FileSystemNode>, runtime: TerminalRuntime) {
+  const base = context.connectedTo === 'shadow' ? shadowFileSystem : context.connectedTo === 'server' ? fsRoot : localFileSystem
+  return systemFileSystem(base, context, runtime)
 }
 
-function getAtPath(root: Record<string, FileSystemNode>, path: string[]): FileSystemNode | undefined {
-  let node: FileSystemNode = root
-  for (const part of path) {
-    if (typeof node === 'string' || !Object.hasOwn(node, part)) return undefined
-    node = node[part]
-  }
-  return node
-}
-
-function listDirectory(node: Record<string, FileSystemNode>, hidden: boolean, long: boolean): string[] {
-  return Object.entries(node).filter(([name]) => hidden || !name.startsWith('.')).sort(([a], [b]) => a.localeCompare(b)).map(([name, value]) => {
-    const dir = typeof value !== 'string'
-    const label = `${name}${dir ? '/' : ''}`
-    return long ? `${dir ? 'drwxr-xr-x' : '-rw-r--r--'} 1 guest guest ${String(dir ? 4096 : new TextEncoder().encode(value).length).padStart(4)} Jan 13 03:37 ${label}` : label
+function listDirectory(node: Record<string, FileSystemNode>, path: string[], user: string, hidden: boolean, long: boolean): string[] {
+  const entries = Object.entries(node).filter(([name]) => hidden || !name.startsWith('.'))
+  if (hidden) entries.unshift(['.', node], ['..', node])
+  return entries.sort(([a], [b]) => a.localeCompare(b)).map(([name, value]) => {
+    const entryPath = name === '.' ? path : name === '..' ? path.slice(0, -1) : [...path, name]
+    const info = metadata(entryPath, value, user)
+    const label = `${name}${info.directory && !['.', '..'].includes(name) ? '/' : ''}`
+    return long ? `${info.mode} 1 ${info.owner} ${info.owner} ${String(info.size).padStart(4)} Jan 13 03:37 ${label}` : label
   })
 }
 
@@ -245,7 +240,7 @@ function scan(args: string[], context: TerminalContext, runtime: TerminalRuntime
 }
 
 function environmentFor(context: TerminalContext): Record<string, string> {
-  return { USER: context.user ?? 'guest', HOSTNAME: context.connectedLabel?.toLowerCase() ?? 'lab', HOME: '/', PWD: `/${context.currentPath.join('/')}`, SHELL: '/bin/bash', PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin', '?': String(context.lastExitCode ?? 0) }
+  return { USER: context.user ?? 'guest', HOSTNAME: context.connectedLabel?.toLowerCase() ?? 'lab', HOME: `/home/${context.user ?? 'guest'}`, OLDPWD: context.previousPath ? `/${context.previousPath.join('/')}` : '', PWD: `/${context.currentPath.join('/')}`, SHELL: '/bin/bash', PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin', '?': String(context.lastExitCode ?? 0) }
 }
 
 function commandStatus(result: TerminalResult): number {
@@ -293,9 +288,17 @@ export function processTerminalCommand(input: string, original: TerminalContext,
       const status = commandStatus(last)
       context = { ...last.context, lastExitCode: status }
       networkLogs.push(...(last.networkLogs ?? []))
+      if (last.packetEvent && last.packetEvent.fromIp !== last.packetEvent.toIp) {
+        const { fromIp, toIp } = last.packetEvent
+        const sameSubnet = fromIp.split('.').slice(0, 3).join('.') === toIp.split('.').slice(0, 3).join('.')
+        const nextHop = sameSubnet || fromIp === runtime.serverIp ? toIp : runtime.serverIp
+        const peers = [...new Set([...(context.neighbors?.[fromIp] ?? []), nextHop])].slice(-32)
+        context = { ...context, neighbors: { ...(context.neighbors ?? {}), [fromIp]: peers } }
+      }
+      errors.push(...(last.diagnostics ?? []))
       // Nonzero pgrep/grep and systemctl status can legitimately produce stdout.
-      const diagnostic = /^usage:|No such file|Is a directory|could not be found|Interactive authentication/.test(last.output[0] ?? '') || /No such file|Is a directory/.test(last.output[0] ?? '')
-      const hasErrorOutput = status !== 0 && (diagnostic || !['grep', 'pgrep', 'systemctl', 'false'].includes(tokens[0]))
+      const diagnostic = /^usage:|No such file|Is a directory|could not be found|Interactive authentication|Permission denied/.test(last.output[0] ?? '') || /No such file|Is a directory/.test(last.output[0] ?? '')
+      const hasErrorOutput = !last.diagnostics && status !== 0 && (diagnostic || !['grep', 'pgrep', 'systemctl', 'false'].includes(tokens[0]))
       if (hasErrorOutput || (status === 2 && ['grep', 'pgrep'].includes(tokens[0]))) {
         errors.push(...last.output); stdin = []
       } else stdin = last.output
@@ -306,7 +309,7 @@ export function processTerminalCommand(input: string, original: TerminalContext,
     output.push(...errors, ...(stdin ?? []))
     if (output.length > 500 || output.join('\n').length > 65536) return { output: ['bash: output exceeds the lab limit (500 lines / 64 KiB)'], context: { ...context, lastExitCode: 1 }, exitCode: 1 }
   }
-  return { ...last, context, output, exitCode: context.lastExitCode ?? 0, networkLogs, ...(composed ? { openedFile: undefined, clear: undefined, packetEvent: undefined, streamed: false } : {}) }
+  return { ...last, context, output, exitCode: context.lastExitCode ?? 0, networkLogs, diagnostics: undefined, ...(composed ? { openedFile: undefined, clear: undefined, packetEvent: undefined, streamed: false } : {}) }
 }
 
 function executeSingle(tokens: string[], context: TerminalContext, fsRoot: Record<string, FileSystemNode>, runtime: TerminalRuntime, stdin?: string[]): TerminalResult {
@@ -317,7 +320,10 @@ function executeSingle(tokens: string[], context: TerminalContext, fsRoot: Recor
   if (command === 'help') return {
     output: [
       'Simulated Linux shell (no real commands or network traffic):',
-      'ip addr | ip route | hostname | whoami | pwd',
+      'ip addr | ip route | ip neigh | getent hosts <name> | hostname | whoami | pwd',
+      'find [path] [-name glob] [-type f|d] | file <path> | stat <path>',
+      'df -h | du -sh [path] | lsblk | free -h | env | printenv [name]',
+      'which <command> | command -v <command> | man <command> | <command> --help',
       'grep [-Finvc] <literal pattern> [path] | head/tail [-n count] [path] | wc [-lwc] [path]',
       'echo <text> | history [count] | true | false',
       'Pipes: ps aux | grep ssh; chains: command && next; command || fallback; command ; next',
@@ -336,6 +342,12 @@ function executeSingle(tokens: string[], context: TerminalContext, fsRoot: Recor
       '', 'Workflow: add workstation → cable → ip addr → ip route → ping -c 4 server → nmap -sn 10.0.0.0/24 → ssh guest@server',
     ], context,
   }
+  if (command === 'man') {
+    if (args.length !== 1) return { output: ['usage: man <command>'], context, exitCode: 2 }
+    const manual = Object.hasOwn(COMMAND_HELP, args[0]) ? COMMAND_HELP[args[0]] : undefined
+    return manual ? { output: [manual[0], '', ...manual.slice(1), '', 'This documents the supported simulator subset, not every Linux option.'], context } : { output: [`No manual entry for ${args[0]}`], context, exitCode: 1 }
+  }
+  if (args.length === 1 && args[0] === '--help' && !BUILTINS.has(command) && Object.hasOwn(COMMAND_HELP, command)) return { output: COMMAND_HELP[command], context }
   if (command === 'connect') {
     const source = resolveTarget(args[0] ?? '', runtime)
     const target = resolveTarget(args[1] ?? 'server', runtime)
@@ -348,9 +360,45 @@ function executeSingle(tokens: string[], context: TerminalContext, fsRoot: Recor
     if (context.sessions?.length) return { output: ['lab console: exit remote SSH sessions before switching workstations.'], context }
     const target = resolveTarget(args[0] ?? '', runtime)
     if (args.length !== 1 || !target || target.kind !== 'pc' || !['pc', 'laptop'].includes(runtime.deviceKinds.get(target.ip) ?? 'pc')) return { output: ['lab control usage: console <PC or laptop on canvas>'], context }
-    return { output: [`Local console opened on ${target.label}; network access depends on its cable.`], context: { ...context, connected: true, connectedTo: 'pc', connectedIp: target.ip, connectedLabel: target.label, lastPcIp: target.ip, lastPcLabel: target.label, user: 'guest', currentPath: [], sessions: [], onboardingStep: 'connect-pc-1' } }
+    return { output: [`Local console opened on ${target.label}; network access depends on its cable.`], context: { ...context, connected: true, connectedTo: 'pc', connectedIp: target.ip, connectedLabel: target.label, lastPcIp: target.ip, lastPcLabel: target.label, user: 'guest', currentPath: [], previousPath: undefined, sessions: [], onboardingStep: 'connect-pc-1' } }
   }
   if (!context.connectedTo) return { output: ['No local console. Add a PC/laptop, or use console <workstation>.'], context }
+  const virtualRoot = fileSystemFor(context, fsRoot, runtime)
+  const fileInspection = inspectFiles(command, args, virtualRoot, context)
+  if (fileInspection) return { ...fileInspection, context }
+  if (command === 'env' || command === 'printenv') {
+    const environment = environmentFor(context)
+    delete environment['?']
+    if ((command === 'env' && args.length) || args.length > 1) return { output: [`usage: ${command}${command === 'printenv' ? ' [name]' : ''}`], context, exitCode: 2 }
+    if (args[0]) return { output: Object.hasOwn(environment, args[0]) ? [environment[args[0]]] : [], context, exitCode: Object.hasOwn(environment, args[0]) ? 0 : 1 }
+    return { output: Object.entries(environment).map(([key, value]) => `${key}=${value}`).sort(), context }
+  }
+  if (command === 'which' || command === 'command') {
+    const name = command === 'command' ? args[1] : args[0]
+    if ((command === 'command' && (args.length !== 2 || args[0] !== '-v')) || (command === 'which' && args.length !== 1)) return { output: [`usage: ${command === 'which' ? 'which <name>' : 'command -v <name>'}`], context, exitCode: 2 }
+    if (!COMMAND_NAMES.includes(name) || ['connect', 'console', 'resume'].includes(name) || (command === 'which' && BUILTINS.has(name))) return { output: [], context, exitCode: 1 }
+    return { output: [BUILTINS.has(name) ? name : `/usr/${name === 'ip' || name === 'ss' ? 'sbin' : 'bin'}/${name}`], context }
+  }
+  if (command === 'getent') {
+    if (args.length !== 2 || args[0] !== 'hosts') return { output: ['usage: getent hosts <name|IP>'], context, exitCode: 2 }
+    const target = resolveTarget(args[1], runtime)
+    if (!target || (target.kind === 'shadow' && !context.shadowDiscovered)) return { output: [], context, exitCode: 2 }
+    return { output: [`${target.ip} ${target.label.toLowerCase()}`], context }
+  }
+  if (command === 'df') {
+    if (args[0] !== '-h' || args.length > 2) return { output: ['usage: df -h [path]'], context, exitCode: 2 }
+    if (args[1] && accessDenied(normalizePath(args[1], context.currentPath, context.user), 'stat')) return { output: [`df: ${args[1]}: Permission denied`], context, exitCode: 1 }
+    if (args[1] && getAtPath(virtualRoot, normalizePath(args[1], context.currentPath, context.user)) === undefined) return { output: [`df: ${args[1]}: No such file or directory`], context, exitCode: 1 }
+    return { output: ['Filesystem      Size  Used Avail Use% Mounted on', '/dev/vda2        40G   12G   26G  30% /', 'Capacity is a simulated host profile.'], context }
+  }
+  if (command === 'lsblk') {
+    if (args.length > 1 || (args.length && args[0] !== '-f')) return { output: ['usage: lsblk [-f]'], context, exitCode: 2 }
+    return { output: args[0] === '-f' ? ['NAME   FSTYPE FSAVAIL FSUSE% MOUNTPOINTS', 'vda', '└─vda2 ext4       26G    30% /'] : ['NAME   SIZE TYPE MOUNTPOINTS', 'vda     40G disk', '└─vda2  40G part /'], context }
+  }
+  if (command === 'free') {
+    if (args.length > 1 || (args.length && args[0] !== '-h')) return { output: ['usage: free [-h]'], context, exitCode: 2 }
+    return { output: ['               total        used        free      shared  buff/cache   available', args[0] === '-h' ? 'Mem:           4.0Gi       512Mi       2.5Gi        64Mi       1.0Gi       3.2Gi' : 'Mem:         4194304      524288     2621440       65536     1048576     3407872', 'Swap:              0           0           0'], context }
+  }
   const inspection = inspectSystem(command, args, context, runtime)
   if (inspection) return { ...inspection, context }
   if (command === 'true' || command === 'false') return { output: [], context, exitCode: command === 'true' ? 0 : 1 }
@@ -374,14 +422,15 @@ function executeSingle(tokens: string[], context: TerminalContext, fsRoot: Recor
     const options = args.slice(0, pathIndex)
     if (args.length > pathIndex) {
       if (args.length !== pathIndex + 1) return { output: [`${command}: expected at most one file`], context, exitCode: 2 }
-      const root = context.connectedTo === 'shadow' ? shadowFileSystem : context.connectedTo === 'server' ? fsRoot : localFileSystem
       const raw = args[pathIndex]
-      const node = getAtPath(root, normalizePath(raw, context.currentPath))
+      const path = normalizePath(raw, context.currentPath, context.user)
+      if (accessDenied(path, 'read')) return { output: [`${command}: ${raw}: Permission denied`], context, exitCode: 1 }
+      const node = getAtPath(virtualRoot, path)
       if (node === undefined) return { output: [`${command}: ${raw}: No such file or directory`], context, exitCode: 1 }
       if (typeof node !== 'string') return { output: [`${command}: ${raw}: Is a directory`], context, exitCode: 1 }
       source = node.length ? node.replace(/\n$/, '').split('\n') : []
       const result = textCommand(command, options, source)!
-      return { ...result, context }
+      return { ...result, context: path.join('/') === '.secretfile' && result.output.length && command !== 'wc' ? { ...context, shadowDiscovered: true } : context }
     }
     return { ...textCommand(command, options, source)!, context }
   }
@@ -396,8 +445,9 @@ function executeSingle(tokens: string[], context: TerminalContext, fsRoot: Recor
     return { output: [`Connection to ${context.connectedLabel?.toLowerCase()} closed.`], context: { ...context, ...previous, sessions, pendingSSH: undefined }, networkLogs: ['SSH session closed; returned to previous shell'] }
   }
   if (command === 'ip') {
-    if (args.length !== 1 || !['addr', 'route'].includes(args[0])) return { output: ['usage: ip addr | ip route'], context }
+    if (args.length !== 1 || !['addr', 'route', 'neigh'].includes(args[0])) return { output: ['usage: ip addr | ip route | ip neigh'], context, exitCode: 2 }
     const online = hasNetwork(context, runtime)
+    if (args[0] === 'neigh') return { output: online ? (context.neighbors?.[context.connectedIp ?? ''] ?? []).filter(ip => ip === runtime.serverIp || runtime.linkedIps.has(ip) || (ip === SHADOW_IP && context.shadowDiscovered)).map(ip => `${ip} dev eth0 lladdr 02:00:${ip.split('.').map(part => Number(part).toString(16).padStart(2, '0')).join(':')} REACHABLE`) : [], context }
     if (args[0] === 'addr') return {
       output: ['1: lo: <LOOPBACK,UP> mtu 65536', '    inet 127.0.0.1/8 scope host lo', `2: eth0: <${online ? 'BROADCAST,MULTICAST,UP,LOWER_UP' : 'NO-CARRIER,BROADCAST,MULTICAST,UP'}> mtu 1500 state ${online ? 'UP' : 'DOWN'}`, ...(online ? [`    inet ${context.connectedIp}/24 scope global eth0`] : ['    No DHCP lease: connect this workstation to JP-SERVER.'])], context,
     }
@@ -428,6 +478,7 @@ function executeSingle(tokens: string[], context: TerminalContext, fsRoot: Recor
     }
   }
   if (command === 'ssh') {
+    if ((context.sessions?.length ?? 0) >= 8) return { output: ['ssh: maximum lab session depth (8) reached'], context, exitCode: 1 }
     if (args.length !== 1 || !/^(?:[a-zA-Z0-9_-]+@)?[a-zA-Z0-9.-]+$/.test(args[0])) return { output: ['usage: ssh [user@]host'], context }
     const [user, targetText] = args[0].includes('@') ? args[0].split('@') : ['guest', args[0]]
     const error = failure(targetText, context, runtime)
@@ -443,23 +494,33 @@ function executeSingle(tokens: string[], context: TerminalContext, fsRoot: Recor
       networkLogs: [`ARP resolution for next hop toward ${target.ip}`, `TCP SYN → SYN-ACK → ACK: ${context.connectedIp} → ${target.ip}:22`, 'SSH protocol negotiation; awaiting authentication'],
     }
   }
-  const root = context.connectedTo === 'shadow' ? shadowFileSystem : context.connectedTo === 'server' ? fsRoot : localFileSystem
+  const root = virtualRoot
   if (command === 'cd' || command === 'ls' || command === 'cat') {
     const flags = command === 'ls' ? args.filter(arg => arg.startsWith('-')) : []
-    if (flags.some(flag => !/^-[al]+$/.test(flag))) return { output: ['ls: supported options are -a, -l, -la'], context }
+    if (flags.some(flag => !/^-[ald]+$/.test(flag))) return { output: ['ls: supported options are -a, -l, -d, -la'], context }
     const paths = command === 'ls' ? args.filter(arg => !arg.startsWith('-')) : args
     if (paths.length > 1 || (command === 'cat' && paths.length !== 1)) return { output: [`usage: ${command} ${command === 'cat' ? '<path>' : '[path]'}`], context }
-    const raw = paths[0] ?? (command === 'cd' ? '/' : '.')
-    const path = normalizePath(raw, context.currentPath)
+    const raw = paths[0] ?? (command === 'cd' ? '~' : '.')
+    if (command === 'cd' && raw === '-' && !context.previousPath) return { output: ['cd: OLDPWD not set'], context, exitCode: 1 }
+    const path = command === 'cd' && raw === '-' ? [...context.previousPath!] : normalizePath(raw, context.currentPath, context.user)
+    const operation = command === 'cat' ? 'read' : command === 'cd' ? 'traverse' : flags.join('').includes('d') ? 'stat' : 'list'
+    if (accessDenied(path, operation)) return { output: [`${command}: ${raw}: Permission denied`], context, exitCode: 1 }
     const node = getAtPath(root, path)
     if (node === undefined) return { output: [`${command}: ${raw}: No such file or directory`], context }
     if (command === 'cd') {
       if (typeof node === 'string') return { output: [`cd: ${raw}: Not a directory`], context }
-      return { output: [], context: { ...context, currentPath: path } }
+      return { output: raw === '-' ? [`/${path.join('/')}`] : [], context: { ...context, currentPath: path, previousPath: [...context.currentPath] } }
     }
-    if (command === 'ls') return { output: typeof node === 'string' ? [raw] : listDirectory(node, flags.join('').includes('a'), flags.join('').includes('l')), context }
+    if (command === 'ls') {
+      const long = flags.join('').includes('l')
+      if (typeof node === 'string' || flags.join('').includes('d')) {
+        const info = metadata(path, node, context.user ?? 'guest')
+        return { output: [long ? `${info.mode} 1 ${info.owner} ${info.owner} ${info.size} Jan 13 03:37 ${raw}` : raw], context }
+      }
+      return { output: listDirectory(node, path, context.user ?? 'guest', flags.join('').includes('a'), long), context }
+    }
     if (typeof node !== 'string') return { output: [`cat: ${raw}: Is a directory`], context }
-    return { output: node.split('\n'), context: { ...context, shadowDiscovered: context.shadowDiscovered || (context.connectedTo === 'server' && path.join('/') === '.secretfile') }, openedFile: { path: path.join('/'), content: node } }
+    return { output: node.length ? node.replace(/\n$/, '').split('\n') : [], context: { ...context, shadowDiscovered: context.shadowDiscovered || (context.connectedTo === 'server' && path.join('/') === '.secretfile') }, openedFile: { path: path.join('/'), content: node } }
   }
   if (['sudo', 'rm', 'reboot', 'shutdown', 'passwd', 'curl', 'wget', 'nc'].includes(command)) return { output: [`${command}: unavailable in this read-only simulated shell`], context }
   return { output: [`bash: ${command}: command not found`], context, exitCode: 127 }
@@ -494,13 +555,28 @@ export function reconcileTerminalContext(context: TerminalContext, runtime: Term
     ...context, connected: Boolean(fallback), connectedTo: fallback ? 'pc' : null,
     connectedIp: fallback?.[0] ?? null, connectedLabel: fallback?.[1] ?? null,
     lastPcIp: fallback?.[0] ?? null, lastPcLabel: fallback?.[1] ?? null,
-    user: 'guest', currentPath: [], sessions: [], pendingSSH: undefined,
+    user: 'guest', currentPath: [], previousPath: undefined, sessions: [], pendingSSH: undefined,
   }
 }
 
 export function completeTerminalInput(input: string, context: TerminalContext, runtime: TerminalRuntime, fsRoot: Record<string, FileSystemNode>): string {
   if (context.pendingSSH) return input
-  const commands = ['echo', 'history', 'grep', 'head', 'tail', 'wc', 'true', 'false', 'uname', 'uptime', 'hostnamectl', 'id', 'groups', 'ps', 'pgrep', 'top', 'ss', 'systemctl', 'journalctl', 'help', 'ip', 'hostname', 'pwd', 'ping', 'ssh', 'connect', 'console', 'nmap', 'whoami', 'resume', 'ls', 'cd', 'cat', 'clear', 'exit', 'logout']
+  let quote: string | null = null
+  let escaped = false
+  let start = 0
+  for (let index = 0; index < input.length; index++) {
+    const char = input[index]
+    if (escaped) { escaped = false; continue }
+    if (char === '\\' && quote !== "'") { escaped = true; continue }
+    if (quote) { if (char === quote) quote = null; continue }
+    if (char === '"' || char === "'") { quote = char; continue }
+    if (['|', '&', ';'].includes(char)) start = index + 1
+  }
+  if (start) {
+    const whitespace = input.slice(start).match(/^\s*/)?.[0] ?? ''
+    return input.slice(0, start) + whitespace + completeTerminalInput(input.slice(start).trimStart(), context, runtime, fsRoot)
+  }
+  const commands = COMMAND_NAMES
   const parts = input.trimStart().split(/\s+/)
   const command = parts[0]
   const token = parts.at(-1) ?? ''
@@ -510,14 +586,26 @@ export function completeTerminalInput(input: string, context: TerminalContext, r
     candidates = commands.filter(candidate => candidate.startsWith(token))
     if (candidates.length === 1 && ['ip', 'ping', 'ssh', 'connect', 'console', 'nmap', 'cd', 'cat'].includes(candidates[0])) return `${candidates[0]} `
   } else if (command === 'ip') {
-    candidates = ['addr', 'route'].filter(candidate => candidate.startsWith(token))
-  } else if (['cd', 'cat', 'ls'].includes(command)) {
-    const root = context.connectedTo === 'shadow' ? shadowFileSystem : context.connectedTo === 'server' ? fsRoot : localFileSystem
+    candidates = ['addr', 'route', 'neigh'].filter(candidate => candidate.startsWith(token))
+  } else if (['man', 'which'].includes(command) || (command === 'command' && parts[1] === '-v')) {
+    candidates = COMMAND_NAMES.filter(candidate => candidate.startsWith(token))
+  } else if (command === 'printenv') {
+    candidates = Object.keys(environmentFor(context)).filter(name => name !== '?' && name.startsWith(token))
+  } else if (command === 'systemctl' || command === 'journalctl') {
+    if (command === 'systemctl' && parts.length === 2) candidates = ['status', 'is-active', 'list-units', '--failed'].filter(value => value.startsWith(token))
+    else if (command === 'systemctl' || parts.at(-2) === '-u') candidates = servicesForHost(context.connectedIp ?? '', runtime).map(service => service.name).filter(value => value.startsWith(token))
+  } else if (['cd', 'cat', 'ls', 'file', 'stat', 'du', 'head', 'tail', 'wc', 'find', 'grep'].includes(command)) {
+    if (token.startsWith('-') || ['-n', '-name', '-type', '-maxdepth'].includes(parts.at(-2) ?? '')) return input
+    if (command === 'grep') {
+      const previous = parts.slice(1, -1).filter(arg => !arg.startsWith('-'))
+      if (!previous.length) return input
+    }
+    const root = fileSystemFor(context, fsRoot, runtime)
     const slash = token.lastIndexOf('/')
     const prefix = token.slice(0, slash + 1)
     const name = token.slice(slash + 1)
-    const directory = getAtPath(root, normalizePath(prefix || '.', context.currentPath))
-    if (directory && typeof directory !== 'string') {
+    const directory = getAtPath(root, normalizePath(prefix || '.', context.currentPath, context.user))
+    if (directory && typeof directory !== 'string' && !accessDenied(normalizePath(prefix || '.', context.currentPath, context.user), 'list')) {
       candidates = Object.entries(directory)
         .filter(([entry, value]) => entry.startsWith(name) && (name.startsWith('.') || !entry.startsWith('.')) && (command !== 'cd' || typeof value !== 'string'))
         .map(([entry, value]) => `${prefix}${entry}${typeof value !== 'string' ? '/' : ''}`)

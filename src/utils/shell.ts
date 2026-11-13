@@ -84,7 +84,7 @@ export function parseShell(input: string): ShellPlan {
 
 export function expandWord(word: ShellWord, environment: Record<string, string>): string {
   return word.map(part => part.expand
-    ? part.text.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*|\?)\}|\$([A-Za-z_][A-Za-z0-9_]*|\?)/g, (_match, braced: string, bare: string) => environment[braced ?? bare] ?? '')
+    ? part.text.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*|\?)\}|\$([A-Za-z_][A-Za-z0-9_]*|\?)/g, (_match, braced: string, bare: string) => Object.hasOwn(environment, braced ?? bare) ? environment[braced ?? bare] : '')
     : part.text).join('')
 }
 

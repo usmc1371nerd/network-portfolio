@@ -10,7 +10,7 @@ function moduleURL(path, replacements = {}) {
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2023 } })
   return `data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`
 }
-const imports = { '../constants/resume': moduleURL('src/constants/resume.ts'), './linuxSystem': moduleURL('src/utils/linuxSystem.ts'), './shell': moduleURL('src/utils/shell.ts') }
+const imports = { '../constants/resume': moduleURL('src/constants/resume.ts'), './linuxSystem': moduleURL('src/utils/linuxSystem.ts'), './shell': moduleURL('src/utils/shell.ts'), './commandHelp': moduleURL('src/utils/commandHelp.ts'), './virtualFs': moduleURL('src/utils/virtualFs.ts', { './linuxSystem': moduleURL('src/utils/linuxSystem.ts') }) }
 const { processTerminalCommand: process, reconcileTerminalContext: reconcile, buildPrompt, initialTerminalLines, completeTerminalInput: complete } = await import(moduleURL('src/utils/terminal.ts', imports))
 const { serverFileSystem } = await import(moduleURL('src/data/serverFileSystem.ts', imports))
 function runtime(linked = ['10.0.0.10', '10.0.0.12', '10.0.0.13']) {
@@ -119,7 +119,7 @@ test('Linux paths work from any directory without exposing prototype properties'
   assert.match(run('cd summary.txt', context).output.join('\n'), /Not a directory/)
   assert.match(run('cat /projects', context).output.join('\n'), /Is a directory/)
   assert.match(run('cat /__proto__', context).output.join('\n'), /No such file/)
-  assert.deepEqual(run('cd ~', context).context.currentPath, [])
+  assert.deepEqual(run('cd ~', context).context.currentPath, ['home', 'guest'])
   assert.match(run('ls -z', context).output.join('\n'), /supported options/)
   assert.match(run('typo', context).output[0], /command not found/)
   assert.match(run('cat README.txt').output.join('\n'), /Local workstation console/)
@@ -173,7 +173,7 @@ test('Tab completion preserves flags, SSH users and absolute/relative nested pat
   assert.equal(complete('nmap -sn 10.0.0.0/', local(), runtime(), serverFileSystem), 'nmap -sn 10.0.0.0/24')
   const server = login(local())
   assert.equal(complete('cat /about/summ', server, runtime(), serverFileSystem), 'cat /about/summary.txt')
-  assert.equal(complete('cd /pro', server, runtime(), serverFileSystem), 'cd /projects/')
+  assert.equal(complete('cd /proj', server, runtime(), serverFileSystem), 'cd /projects/')
   const projects = run('cd projects', server).context
   assert.equal(complete('cat ../about/summ', projects, runtime(), serverFileSystem), 'cat ../about/summary.txt')
   assert.equal(complete('cat READ', local(), runtime(), serverFileSystem), 'cat README.txt')
@@ -313,4 +313,122 @@ test('file errors remain diagnostics rather than becoming pipeline input', () =>
   const state = run('systemctl status missing | wc -l', server)
   assert.match(state.output.join('\n'), /could not be found/)
   assert.equal(state.output.at(-1), '0')
+})
+
+test('filesystem search, metadata and shared permissions support investigation without bypasses', () => {
+  const server = login(local())
+  assert.match(run("find /projects -name '*.txt' -type f -maxdepth 2", server).output.join('\n'), /network-lab\.txt/)
+  assert.match(run("find / -name '.*' -maxdepth 1", server).output.join('\n'), /\.secretfile/)
+  assert.match(run('file /etc/os-release', server).output[0], /ASCII text/)
+  assert.match(run('stat /etc/shadow', server).output.join('\n'), /-rw-------.*root/)
+  assert.match(run('ls -ld /root', server).output[0], /drwx------.*root/)
+  const forbidden = ['cat /etc/shadow', 'head /etc/shadow', 'tail /etc/shadow', 'grep protected /etc/shadow', 'wc /etc/shadow', 'file /etc/shadow', 'cat /root/private.txt', 'ls /root', 'cd /root', 'stat /root/private.txt', 'df -h /root/private.txt']
+  for (const command of forbidden) {
+    const result = run(command, server)
+    assert.equal(result.exitCode, 1, command)
+    assert.match(result.output.join('\n'), /Permission denied/, command)
+    assert.doesNotMatch(result.output.join('\n'), /protected simulated credential|root-only lab file/, command)
+  }
+  assert.equal(complete('cat /root/pri', server, runtime(), serverFileSystem), 'cat /root/pri')
+  const found = run('find /root -type f', server)
+  assert.equal(found.exitCode, 1)
+  assert.doesNotMatch(found.output.join('\n'), /private.txt/)
+  assert.match(run("find / -name '*.txt' | grep network-lab", server).output.join('\n'), /Permission denied.*network-lab/s)
+  assert.equal(run('find / -maxdepth 999', server).exitCode, 2)
+  assert.equal(run('find / -exec rm', server).exitCode, 2)
+  assert.equal(run('find /__proto__', server).exitCode, 1)
+  assert.equal(run('cat /etc/../etc/shadow', server).exitCode, 1)
+  assert.equal(run('grep x /etc/shadow | wc -l', server).output.at(-1), '0')
+})
+
+test('home, previous directory and environment stay consistent across SSH sessions', () => {
+  let context = run('cd', local()).context
+  assert.deepEqual(context.currentPath, ['home', 'guest'])
+  assert.equal(run('printenv HOME', context).output[0], '/home/guest')
+  context = run('cd /etc', context).context
+  assert.equal(run('echo $OLDPWD', context).output[0], '/home/guest')
+  const back = run('cd -', context)
+  assert.deepEqual(back.context.currentPath, ['home', 'guest'])
+  assert.equal(back.output[0], '/home/guest')
+  const server = login(context)
+  assert.equal(run('pwd', server).output[0], '/')
+  assert.deepEqual(run('exit', server).context.currentPath, ['etc'])
+  assert.equal(run('printenv SECRET_API_KEY', server).exitCode, 1)
+  assert.doesNotMatch(run('env', server).output.join('\n'), /shadow|SMTP|TOKEN|PASSWORD/)
+  assert.equal(run('which ssh', server).output[0], '/usr/bin/ssh')
+  assert.equal(run('which cd', server).exitCode, 1)
+  assert.equal(run('command -v cd', server).output[0], 'cd')
+  assert.equal(run('command -v constructor', server).exitCode, 1)
+  assert.equal(run('cd -', local()).exitCode, 1)
+})
+
+test('storage, neighbor, resolution and manuals use simulated state only', () => {
+  const server = login(local())
+  assert.match(run('df -h', server).output.join('\n'), /40G.*12G.*26G/)
+  assert.match(run('du -sh /projects', server).output[0], /K\s+\/projects/)
+  assert.match(run('lsblk -f', server).output.join('\n'), /vda2.*ext4/)
+  assert.match(run('free -h', server).output.join('\n'), /4.0Gi/)
+  assert.match(run('cat /proc/meminfo', server).output.join('\n'), /4194304 kB/)
+  assert.equal(run('getent hosts server').output[0], '10.0.0.1 jp-server')
+  assert.equal(run('getent hosts example.com').exitCode, 2)
+  assert.deepEqual(run('ip neigh').output, [])
+  const contacted = run('ping -c 1 server').context
+  assert.match(run('ip neigh', contacted).output.join('\n'), /10.0.0.1.*lladdr.*REACHABLE/)
+  assert.deepEqual(run('ip neigh', contacted, runtime([])).output, [])
+  assert.match(run('man find', server).output.join('\n'), /-maxdepth/)
+  assert.equal(run('man __proto__', server).exitCode, 1)
+  assert.match(run('grep --help', server).output.join('\n'), /Literal matching/)
+  assert.doesNotMatch(run('cat /etc/passwd', server).output.join('\n'), /shadow/)
+})
+
+test('auth.log is live per-host journal data and generic file tools can discover deliberate clues', () => {
+  const server = login(local())
+  assert.match(run("grep 'Accepted password' /var/log/auth.log", server).output.join('\n'), /guest from 10.0.0.10/)
+  assert.doesNotMatch(run('cat /var/log/auth.log', run('exit', server).context).output.join('\n'), /Accepted password/)
+  const clue = run("grep 'SSH account' /.secretfile", server)
+  assert.equal(clue.context.shadowDiscovered, true)
+  assert.match(clue.output.join('\n'), /SSH account: shadow/)
+})
+
+test('completion works inside pipelines and never enumerates protected children', () => {
+  const server = login(local())
+  assert.equal(complete('ps aux | gre', server, runtime(), serverFileSystem), 'ps aux | grep')
+  assert.equal(complete('echo "x|y"; wh', server, runtime(), serverFileSystem), 'echo "x|y"; wh')
+  assert.equal(complete('echo ok && printenv HOM', server, runtime(), serverFileSystem), 'echo ok && printenv HOME')
+  assert.equal(complete('systemctl status ss', server, runtime(), serverFileSystem), 'systemctl status ssh')
+  assert.equal(complete('journalctl -u back', server, runtime(), serverFileSystem), 'journalctl -u backup-agent')
+  assert.equal(complete('man gre', server, runtime(), serverFileSystem), 'man grep')
+  assert.equal(complete('grep word /root/pri', server, runtime(), serverFileSystem), 'grep word /root/pri')
+})
+
+test('resource and variable boundaries reject inherited keys and excessively nested sessions', () => {
+  assert.deepEqual(run('echo $constructor').output, [''])
+  assert.deepEqual(run('echo ${__proto__}').output, [''])
+  let context = local()
+  for (let index = 0; index < 8; index++) context = login(context)
+  assert.equal(context.sessions.length, 8)
+  const blocked = run('ssh server', context)
+  assert.equal(blocked.exitCode, 1)
+  assert.equal(blocked.context.sessions.length, 8)
+  assert.equal(blocked.context.pendingSSH, undefined)
+})
+
+test('history, journals, command input and output stay bounded under repeated or oversized input', () => {
+  let context = local()
+  for (let index = 0; index < 120; index++) context = run(`echo ${index}`, context).context
+  assert.equal(context.shellHistory.length, 100)
+  assert.equal(context.shellHistory[0], 'echo 20')
+  context = run('yes', run('ssh server', context).context).context
+  for (let index = 0; index < 105; index++) {
+    if (!context.pendingSSH) context = run('ssh server', context).context
+    context = run('NOT-A-REAL-PASSWORD', context).context
+  }
+  assert.equal(context.journal.length, 100)
+  assert.doesNotMatch(JSON.stringify(context.journal), /NOT-A-REAL-PASSWORD/)
+  const server = login(local())
+  const oversized = process('cat /huge', server, { huge: Array(501).fill('line').join('\n') }, runtime())
+  assert.equal(oversized.exitCode, 1)
+  assert.match(oversized.output[0], /output exceeds/)
+  assert.equal(run('echo a\u0000b').exitCode, 2)
+  assert.equal(run(`find / -name '${'*'.repeat(129)}'`, server).exitCode, 2)
 })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type SetStateAction, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ReactFlowProvider,
@@ -248,7 +248,15 @@ function getAlwaysOnSuggestedCommands(options: {
   }
   const root = context.connectedTo === 'shadow' ? shadowFileSystem : serverFileSystem
   const directory = getDirectoryForPath(root as Record<string, unknown>, context.currentPath)
-  return ['pwd', 'ls', 'ip route', 'exit', ...(context.currentPath.length ? ['cd ..'] : []), ...Object.entries(directory ?? {}).filter(([name]) => !name.startsWith('.')).map(([name, value]) => `${typeof value === 'string' ? 'cat' : 'cd'} ${name}`)]
+  return ['pwd', 'ls', 'systemctl --failed', 'ss -tuln', 'exit', ...(context.currentPath.length ? ['cd ..'] : []), ...Object.entries(directory ?? {}).filter(([name]) => !name.startsWith('.')).map(([name, value]) => `${typeof value === 'string' ? 'cat' : 'cd'} ${name}`)]
+}
+
+function boundedLog(current: string[], update: SetStateAction<string[]>): string[] {
+  return (typeof update === 'function' ? update(current) : update).slice(-1000)
+}
+
+function boundedHistory(current: string[], update: SetStateAction<string[]>): string[] {
+  return (typeof update === 'function' ? update(current) : update).slice(-100)
 }
 
 function App() {
@@ -257,17 +265,17 @@ function App() {
   const [allowMobileLab, setAllowMobileLab] = useState(false)
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
-  const [packetLogs, setPacketLogs] = useState<string[]>([])
+  const [packetLogs, setPacketLogs] = useReducer(boundedLog, [])
   const [activePanel, setActivePanel] = useState<ActivePanelState | null>(null)
   const [cameraSessions, setCameraSessions] = useState<Record<string, CameraPanelSession>>({})
-  const [terminalLines, setTerminalLines] = useState<string[]>(initialTerminalLines)
+  const [terminalLines, setTerminalLines] = useReducer(boundedLog, initialTerminalLines)
   const [terminalInput, setTerminalInput] = useState('')
   const [terminalRunning, setTerminalRunning] = useState(false)
   const terminalTimersRef = useRef<number[]>([])
   const terminalRunningRef = useRef(false)
   const pingProgressRef = useRef<{ target: string; received: number } | null>(null)
 
-  const [commandHistory, setCommandHistory] = useState<string[]>([])
+  const [commandHistory, setCommandHistory] = useReducer(boundedHistory, [])
   const [historyCursor, setHistoryCursor] = useState<number | null>(null)
   const [historyDraftInput, setHistoryDraftInput] = useState('')
   const [terminalContext, setTerminalContext] = useState<TerminalContext>({
@@ -940,6 +948,22 @@ function App() {
         event.preventDefault()
         return
       }
+      if (event.ctrlKey && event.key.toLowerCase() === 'l') {
+        event.preventDefault()
+        setTerminalLines([])
+        return
+      }
+      if (event.ctrlKey && event.key.toLowerCase() === 'u') {
+        event.preventDefault()
+        setTerminalInput('')
+        return
+      }
+      if (event.ctrlKey && event.key.toLowerCase() === 'd' && !terminalInput) {
+        event.preventDefault()
+        if (terminalContext.pendingSSH) cancelTerminalCommand()
+        else executeTerminalCommand('exit')
+        return
+      }
       if (terminalContext.pendingSSH && event.key !== 'Enter') {
         if (['Tab', 'ArrowUp', 'ArrowDown'].includes(event.key)) event.preventDefault()
         return
@@ -1001,6 +1025,7 @@ function App() {
       commandHistory,
       handleAutocomplete,
       handleTerminalSubmit,
+      executeTerminalCommand,
       historyCursor,
       historyDraftInput,
       terminalInput,

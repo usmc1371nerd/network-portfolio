@@ -97,6 +97,7 @@ export function TerminalPanel({
           ref={inputRef}
           type={isPassword ? "password" : "text"}
           readOnly={isRunning}
+          maxLength={2048}
           aria-label={isPassword ? "SSH password" : "Terminal command or login response"}
           autoCapitalize="none"
           autoCorrect="off"
