@@ -1,5 +1,6 @@
 import type { FileSystemNode } from '../data/serverFileSystem'
 import { RESUME_URL } from '../constants/resume'
+import { inspectSystem, listeningSockets, recordJournal, type JournalEntry } from './linuxSystem'
 
 export type TerminalSession = {
   connectedTo: 'server' | 'pc' | 'shadow' | null
@@ -25,6 +26,7 @@ export type TerminalContext = TerminalSession & {
   sessions?: TerminalSession[]
   knownHosts?: string[]
   pendingSSH?: PendingSSH
+  journal?: JournalEntry[]
 }
 
 export type TerminalResult = {
@@ -37,6 +39,7 @@ export type TerminalResult = {
   connectionEvent?: { sourceLabel: string; targetLabel: string }
   networkLogs?: string[]
   streamed?: boolean
+  exitCode?: number
 }
 
 export type TerminalRuntime = {
@@ -110,7 +113,7 @@ function sshAllowed(target: ResolvedTarget, context: TerminalContext): boolean {
 }
 
 function hasSSH(target: ResolvedTarget, runtime: TerminalRuntime): boolean {
-  return runtime.deviceKinds.get(target.ip) !== 'camera'
+  return listeningSockets(target.ip, runtime).some(socket => socket.protocol === 'tcp' && socket.port === 22)
 }
 
 function failure(targetText: string, context: TerminalContext, runtime: TerminalRuntime): string | null {
@@ -157,14 +160,14 @@ function continueSSH(input: string, context: TerminalContext, runtime: TerminalR
     const attempts = pending.attempts + 1
     return {
       output: [attempts >= 3 ? `${user}@${target.label.toLowerCase()}: Permission denied (password).` : 'Permission denied, please try again.'],
-      context: { ...context, pendingSSH: attempts >= 3 ? undefined : { ...pending, attempts } },
+      context: { ...recordJournal(context, target.ip, 'ssh', `Failed password for ${user} from ${context.connectedIp} port 52000 ssh2`), pendingSSH: attempts >= 3 ? undefined : { ...pending, attempts } },
       networkLogs: ['SSH authentication failed'],
     }
   }
   return {
     output: [`Authenticated to ${target.label.toLowerCase()} (${target.ip}) using password.`, 'Welcome to the simulated lab. Type ls to explore; exit returns to your previous shell.'],
     context: {
-      ...context, connected: true, connectedTo: target.kind, connectedLabel: target.label,
+      ...recordJournal(context, target.ip, 'ssh', `Accepted password for ${user} from ${context.connectedIp} port 52000 ssh2`), connected: true, connectedTo: target.kind, connectedLabel: target.label,
       connectedIp: target.ip, user, currentPath: [], pendingSSH: undefined,
       sessions: [...(context.sessions ?? []), snapshot(context)],
       lastPcIp: context.connectedTo === 'pc' ? context.connectedIp : context.lastPcIp,
@@ -227,10 +230,11 @@ function scan(args: string[], context: TerminalContext, runtime: TerminalRuntime
     output.push(`Nmap scan report for ${host.label.toLowerCase()} (${host.ip})`, 'Host is up (0.0030s latency).')
     if (!discovery) {
       output.push('PORT     STATE    SERVICE')
-      if (hasSSH(host, runtime)) output.push(`22/tcp   ${sshAllowed(host, context) ? 'open    ' : 'filtered'} ssh`)
-      if (runtime.deviceKinds.get(host.ip) === 'camera') output.push('80/tcp   open     http', '443/tcp  open     https')
-      if (runtime.deviceKinds.get(host.ip) === 'nas') output.push('445/tcp  open     microsoft-ds')
-      if (host.kind === 'server') output.push('443/tcp  open     https')
+      for (const socket of listeningSockets(host.ip, runtime)) {
+        const serviceNames: Record<number, string> = { 22: 'ssh', 80: 'http', 443: 'https', 445: 'microsoft-ds' }
+        const state = socket.port === 22 && !sshAllowed(host, context) ? 'filtered' : 'open'
+        output.push(`${`${socket.port}/${socket.protocol}`.padEnd(8)} ${state.padEnd(8)} ${serviceNames[socket.port] ?? socket.service.name}`)
+      }
     }
   }
   output.push(`Nmap done: ${hosts.length} host${hosts.length === 1 ? '' : 's'} up.`)
@@ -248,6 +252,9 @@ export function processTerminalCommand(input: string, context: TerminalContext, 
     output: [
       'Simulated Linux shell (no real commands or network traffic):',
       'ip addr | ip route | hostname | whoami | pwd',
+      'uname [-a] | uptime | hostnamectl | id | groups',
+      'ps aux | pgrep [-f] <name> | top -b -n 1 | ss -tuln',
+      'systemctl status <unit> | systemctl --failed | journalctl -u <unit> [-n count]',
       'ping [-c 1..10] <host> | nmap [-sn] <host|IPv4/24 subnet>',
       'ssh [user@]host | exit | logout',
       'ls [-a|-l|-la] [path] | cd [path] | cat <path> | clear | resume',
@@ -274,6 +281,8 @@ export function processTerminalCommand(input: string, context: TerminalContext, 
     return { output: [`Local console opened on ${target.label}; network access depends on its cable.`], context: { ...context, connected: true, connectedTo: 'pc', connectedIp: target.ip, connectedLabel: target.label, lastPcIp: target.ip, lastPcLabel: target.label, user: 'guest', currentPath: [], sessions: [], onboardingStep: 'connect-pc-1' } }
   }
   if (!context.connectedTo) return { output: ['No local console. Add a PC/laptop, or use console <workstation>.'], context }
+  const inspection = inspectSystem(command, args, context, runtime)
+  if (inspection) return { ...inspection, context }
   if (command === 'whoami') return { output: [context.user ?? 'guest'], context }
   if (command === 'hostname') return { output: [context.connectedLabel!.toLowerCase()], context }
   if (command === 'pwd') return { output: [`/${context.currentPath.join('/')}`], context }
@@ -388,7 +397,7 @@ export function reconcileTerminalContext(context: TerminalContext, runtime: Term
 
 export function completeTerminalInput(input: string, context: TerminalContext, runtime: TerminalRuntime, fsRoot: Record<string, FileSystemNode>): string {
   if (context.pendingSSH) return input
-  const commands = ['help', 'ip', 'hostname', 'pwd', 'ping', 'ssh', 'connect', 'console', 'nmap', 'whoami', 'resume', 'ls', 'cd', 'cat', 'clear', 'exit', 'logout']
+  const commands = ['uname', 'uptime', 'hostnamectl', 'id', 'groups', 'ps', 'pgrep', 'top', 'ss', 'systemctl', 'journalctl', 'help', 'ip', 'hostname', 'pwd', 'ping', 'ssh', 'connect', 'console', 'nmap', 'whoami', 'resume', 'ls', 'cd', 'cat', 'clear', 'exit', 'logout']
   const parts = input.trimStart().split(/\s+/)
   const command = parts[0]
   const token = parts.at(-1) ?? ''

@@ -10,7 +10,7 @@ function moduleURL(path, replacements = {}) {
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2023 } })
   return `data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`
 }
-const imports = { '../constants/resume': moduleURL('src/constants/resume.ts') }
+const imports = { '../constants/resume': moduleURL('src/constants/resume.ts'), './linuxSystem': moduleURL('src/utils/linuxSystem.ts') }
 const { processTerminalCommand: process, reconcileTerminalContext: reconcile, buildPrompt, initialTerminalLines, completeTerminalInput: complete } = await import(moduleURL('src/utils/terminal.ts', imports))
 const { serverFileSystem } = await import(moduleURL('src/data/serverFileSystem.ts', imports))
 function runtime(linked = ['10.0.0.10', '10.0.0.12', '10.0.0.13']) {
@@ -198,4 +198,40 @@ test('routine guidance and SSH prompts do not reveal the hidden account or passw
   assert.equal(clue.context.shadowDiscovered, true)
   const pc = run('exit', clue.context).context
   assert.equal(login(pc, '10.0.13.37', runtime(), 'shadow', 'shadow').connectedTo, 'shadow')
+})
+
+test('service status, process inspection, listening sockets and scans share the same inventory', () => {
+  const server = login(local())
+  const status = run('systemctl status ssh', server)
+  assert.equal(status.exitCode, 0)
+  assert.match(status.output.join('\n'), /Main PID: 612/)
+  assert.match(run('ps aux', server).output.join('\n'), /612.*sshd/)
+  assert.deepEqual(run('pgrep sshd', server).output, ['612'])
+  assert.match(run('ss -tuln', server).output.join('\n'), /0\.0\.0\.0:22/)
+  assert.match(run('nmap server', server).output.join('\n'), /22\/tcp.*open/)
+  assert.match(run('systemctl --failed', server).output.join('\n'), /backup-agent/)
+  assert.equal(run('systemctl status backup-agent', server).exitCode, 3)
+  assert.equal(run('systemctl is-active missing', server).exitCode, 4)
+  assert.equal(run('systemctl restart ssh', server).exitCode, 1)
+  assert.match(run('journalctl -u backup-agent -p err', server).output.join('\n'), /not mounted/)
+  assert.equal(run('pgrep missing-process', server).exitCode, 1)
+  assert.equal(run('top -b -n 1', server).exitCode, undefined)
+  assert.equal(run('top', server).exitCode, 2)
+  assert.equal(run('journalctl -n 999999', server).exitCode, 2)
+  assert.deepEqual(run('journalctl -n 0', server).output, [])
+})
+
+test('authentication journal records actual attempts per host without passwords or hidden account hints', () => {
+  const pending = run('yes', run('ssh server').context).context
+  const rejected = run('DO-NOT-LOG-THIS-PASSWORD', pending).context
+  const server = run('portfolio', rejected).context
+  const log = run('journalctl -u ssh', server).output.join('\n')
+  assert.match(log, /Failed password for guest from 10\.0\.0\.10/)
+  assert.match(log, /Accepted password for guest/)
+  assert.doesNotMatch(log, /DO-NOT-LOG|portfolio|shadow/)
+  const pc = run('exit', server).context
+  assert.doesNotMatch(run('journalctl -u ssh', pc).output.join('\n'), /Accepted password/)
+  assert.match(run('uname -a', server).output[0], /Linux jp-server.*simulated/)
+  assert.match(run('id', server).output[0], /uid=1000\(guest\)/)
+  assert.equal(run('uname --bogus', server).exitCode, 2)
 })
